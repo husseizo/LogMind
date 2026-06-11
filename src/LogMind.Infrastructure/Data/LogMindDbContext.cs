@@ -67,20 +67,20 @@ public class LogMindDbContext : DbContext
             new KnownIssue
             {
                 Id = 2,
-                Title = "Shopify Rate Limit Exceeded",
-                Description = "Shopify API returns 429 Too Many Requests when rate limit is hit",
-                ErrorPattern = "429|Too Many Requests|rate_limit_exceeded",
-                Source = "Shopify",
+                Title = "SapOdoo API Connection Timeout",
+                Description = "Odoo API connection times out during SAP-Odoo synchronization",
+                ErrorPattern = "ConnectionTimeout|timeout|ETIMEDOUT|Connection refused|ConnectError",
+                Source = "SapOdoo",
                 CreatedAt = new DateTime(2024, 1, 1),
                 UpdatedAt = new DateTime(2024, 1, 1)
             },
             new KnownIssue
             {
                 Id = 3,
-                Title = "Finance DB Deadlock",
-                Description = "Database deadlock detected in Finance transaction processing",
-                ErrorPattern = "deadlock|transaction.*timeout|lock.*timeout",
-                Source = "Finance",
+                Title = "SapOdoo Sync Mapping Error",
+                Description = "Data mapping error during SAP to Odoo sync, typically caused by missing or mismatched field mappings",
+                ErrorPattern = "mapping.*error|IDOC|SyncException|sync_error|KeyError|field.*not found",
+                Source = "SapOdoo",
                 CreatedAt = new DateTime(2024, 1, 1),
                 UpdatedAt = new DateTime(2024, 1, 1)
             }
@@ -101,20 +101,20 @@ public class LogMindDbContext : DbContext
             {
                 Id = 2,
                 KnownIssueId = 2,
-                Title = "Implement Exponential Backoff",
-                Steps = "1. Add retry logic with exponential backoff\n2. Respect the Retry-After header\n3. Limit to 4 requests per second per endpoint",
-                References = "https://shopify.dev/docs/api/usage/rate-limits",
-                Upvotes = 8,
+                Title = "Check Odoo Server and Increase Timeout",
+                Steps = "1. Check Odoo server is running and reachable\n2. Increase xmlrpc timeout in SapOdoo config\n3. Check firewall rules between SAP and Odoo servers\n4. Verify Odoo URL and credentials in appsettings",
+                References = "Odoo Admin Guide — Timeouts",
+                Upvotes = 6,
                 CreatedAt = new DateTime(2024, 1, 1)
             },
             new Solution
             {
                 Id = 3,
                 KnownIssueId = 3,
-                Title = "Optimize Finance Transaction Queries",
-                Steps = "1. Review long-running queries in Finance DB\n2. Add missing indexes on transaction tables\n3. Reduce transaction scope where possible\n4. Enable READ_COMMITTED_SNAPSHOT isolation",
-                References = "Finance DB Runbook v2.3",
-                Upvotes = 5,
+                Title = "Fix SapOdoo Field Mapping Config",
+                Steps = "1. Review the field mapping config in SapOdoo settings\n2. Compare SAP IDOC structure against Odoo model fields\n3. Add any missing field mappings and redeploy\n4. Re-run the failed sync batch from the SapOdoo admin panel",
+                References = "SapOdoo Field Mapping Runbook",
+                Upvotes = 4,
                 CreatedAt = new DateTime(2024, 1, 1)
             }
         );

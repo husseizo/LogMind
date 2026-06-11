@@ -101,8 +101,8 @@ namespace LogMind.Infrastructure.Data.Migrations
                 values: new object[,]
                 {
                     { 1, new DateTime(2024, 1, 1), "SAP RFC connection times out or is refused due to misconfigured gateway", "RFC_ERROR|CONNECT_FAILURE|SAPException", "SAP", "SAP RFC Connection Failure", new DateTime(2024, 1, 1) },
-                    { 2, new DateTime(2024, 1, 1), "Shopify API returns 429 Too Many Requests when rate limit is hit", "429|Too Many Requests|rate_limit_exceeded", "Shopify", "Shopify Rate Limit Exceeded", new DateTime(2024, 1, 1) },
-                    { 3, new DateTime(2024, 1, 1), "Database deadlock detected in Finance transaction processing", "deadlock|transaction.*timeout|lock.*timeout", "Finance", "Finance DB Deadlock", new DateTime(2024, 1, 1) }
+                    { 2, new DateTime(2024, 1, 1), "Odoo API connection times out during SAP-Odoo synchronization", "ConnectionTimeout|timeout|ETIMEDOUT|Connection refused|ConnectError", "SapOdoo", "SapOdoo API Connection Timeout", new DateTime(2024, 1, 1) },
+                    { 3, new DateTime(2024, 1, 1), "Data mapping error during SAP to Odoo sync, typically caused by missing or mismatched field mappings", "mapping.*error|IDOC|SyncException|sync_error|KeyError|field.*not found", "SapOdoo", "SapOdoo Sync Mapping Error", new DateTime(2024, 1, 1) }
                 });
 
             migrationBuilder.InsertData(
@@ -111,8 +111,8 @@ namespace LogMind.Infrastructure.Data.Migrations
                 values: new object[,]
                 {
                     { 1, new DateTime(2024, 1, 1), 1, "SAP Note 1234567", "1. Open SAP Management Console\n2. Navigate to SAP Gateway\n3. Stop and restart the gateway service\n4. Monitor connection logs for reconnection", "Restart SAP Gateway Service", 12 },
-                    { 2, new DateTime(2024, 1, 1), 2, "https://shopify.dev/docs/api/usage/rate-limits", "1. Add retry logic with exponential backoff\n2. Respect the Retry-After header\n3. Limit to 4 requests per second per endpoint", "Implement Exponential Backoff", 8 },
-                    { 3, new DateTime(2024, 1, 1), 3, "Finance DB Runbook v2.3", "1. Review long-running queries in Finance DB\n2. Add missing indexes on transaction tables\n3. Reduce transaction scope where possible\n4. Enable READ_COMMITTED_SNAPSHOT isolation", "Optimize Finance Transaction Queries", 5 }
+                    { 2, new DateTime(2024, 1, 1), 2, "Odoo Admin Guide — Timeouts", "1. Check Odoo server is running and reachable\n2. Increase xmlrpc timeout in SapOdoo config\n3. Check firewall rules between SAP and Odoo servers\n4. Verify Odoo URL and credentials in appsettings", "Check Odoo Server and Increase Timeout", 6 },
+                    { 3, new DateTime(2024, 1, 1), 3, "SapOdoo Field Mapping Runbook", "1. Review the field mapping config in SapOdoo settings\n2. Compare SAP IDOC structure against Odoo model fields\n3. Add any missing field mappings and redeploy\n4. Re-run the failed sync batch from the SapOdoo admin panel", "Fix SapOdoo Field Mapping Config", 4 }
                 });
 
             migrationBuilder.CreateIndex(name: "IX_ErrorPatterns_KnownIssueId", table: "ErrorPatterns", column: "KnownIssueId");
