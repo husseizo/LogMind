@@ -11,7 +11,9 @@ public static class LogFileParser
 
     internal static readonly Regex[] LogPatterns =
     [
-        // 2024-01-01 00:00:00[.frac] LEVEL message  (also handles comma-ms: Python logging)
+        // Odoo: 2024-01-01 00:00:00,123 12345 INFO dbname module: message
+        new Regex($@"^(?<timestamp>{TS})\s+\d+\s+(?<level>{LVL})\s+\S+\s+(?<message>.+)$", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+        // 2024-01-01 00:00:00[.frac] LEVEL message  (standard / Python logging with comma-ms)
         new Regex($@"^(?<timestamp>{TS})\s+(?<level>{LVL})\s+(?<message>.+)$", RegexOptions.IgnoreCase | RegexOptions.Compiled),
         // [LEVEL] 2024-01-01T00:00:00 message
         new Regex($@"^\[(?<level>{LVL})\]\s+(?<timestamp>{TS})\s+(?<message>.+)$", RegexOptions.IgnoreCase | RegexOptions.Compiled),
@@ -21,7 +23,7 @@ public static class LogFileParser
         new Regex($@"^\[(?<timestamp>{TS})\]\s+\[?(?<level>{LVL})\]?\s+(?<message>.+)$", RegexOptions.IgnoreCase | RegexOptions.Compiled),
         // 2024-01-01 00:00:00 | LEVEL | message  /  2024-01-01 00:00:00 - LEVEL - message
         new Regex($@"^(?<timestamp>{TS})\s*[-|]\s*(?<level>{LVL})\s*[-|]\s*(?<message>.+)$", RegexOptions.IgnoreCase | RegexOptions.Compiled),
-        // LEVEL: 2024-01-01 00:00:00 message  /  LEVEL  2024-01-01T...  message
+        // LEVEL: 2024-01-01 00:00:00 message
         new Regex($@"^(?<level>{LVL})[:\s]+(?<timestamp>{TS})\s+(?<message>.+)$", RegexOptions.IgnoreCase | RegexOptions.Compiled),
     ];
 
