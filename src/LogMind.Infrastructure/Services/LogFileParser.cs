@@ -9,11 +9,16 @@ public static class LogFileParser
     private const string TS    = @"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:?\d{2})?";
     private const string LVL   = @"TRACE|DEBUG|INFO|WARN(?:ING)?|ERROR|FATAL|CRITICAL";
 
+    // Serilog 3-letter level abbreviations
+    private const string SLVL = @"VRB|DBG|INF|WRN|ERR|FTL";
+
     internal static readonly Regex[] LogPatterns =
     [
+        // Serilog: 2024-01-01 00:00:00.123 +03:00 [INF] Optional.Logger message
+        new Regex(@"^(?<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}[.,]\d+ [+-]\d{2}:\d{2})\s+\[(?<level>" + SLVL + @")\]\s+(?<message>.+)$", RegexOptions.IgnoreCase | RegexOptions.Compiled),
         // Odoo: 2024-01-01 00:00:00,123 12345 INFO dbname module: message
         new Regex($@"^(?<timestamp>{TS})\s+\d+\s+(?<level>{LVL})\s+\S+\s+(?<message>.+)$", RegexOptions.IgnoreCase | RegexOptions.Compiled),
-        // 2024-01-01 00:00:00[.frac] LEVEL message  (standard / Python logging with comma-ms)
+        // Standard: 2024-01-01 00:00:00[.frac] LEVEL message
         new Regex($@"^(?<timestamp>{TS})\s+(?<level>{LVL})\s+(?<message>.+)$", RegexOptions.IgnoreCase | RegexOptions.Compiled),
         // [LEVEL] 2024-01-01T00:00:00 message
         new Regex($@"^\[(?<level>{LVL})\]\s+(?<timestamp>{TS})\s+(?<message>.+)$", RegexOptions.IgnoreCase | RegexOptions.Compiled),
@@ -113,9 +118,17 @@ public static class LogFileParser
 
     public static string NormalizeLevel(string level) => level.ToUpperInvariant() switch
     {
-        "WARNING" => "WARN",
+        // Full-word aliases
+        "WARNING"  => "WARN",
         "CRITICAL" => "FATAL",
-        _ => level.ToUpperInvariant()
+        // Serilog 3-letter abbreviations
+        "INF" => "INFO",
+        "WRN" => "WARN",
+        "ERR" => "ERROR",
+        "DBG" => "DEBUG",
+        "FTL" => "FATAL",
+        "VRB" => "DEBUG",
+        _     => level.ToUpperInvariant()
     };
 
     public static LogEntry CreateEntry(string source, string filePath, DateTime timestamp, string level, string message, List<string> stackLines) =>
