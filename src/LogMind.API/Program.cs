@@ -28,14 +28,15 @@ builder.Services.AddHttpClient<OllamaAiExplanationService>(client =>
     client.BaseAddress = new Uri(ollamaBase);
     client.Timeout = TimeSpan.FromSeconds(ollamaTimeout);
 });
-builder.Services.AddScoped<IAiExplanationService, OllamaAiExplanationService>();
+// Resolve via the typed-client factory so the HttpClient carries the configured BaseAddress
+builder.Services.AddScoped<IAiExplanationService>(sp => sp.GetRequiredService<OllamaAiExplanationService>());
 
 builder.Services.AddHttpClient<OllamaEmbeddingService>(client =>
 {
     client.BaseAddress = new Uri(ollamaBase);
     client.Timeout = TimeSpan.FromSeconds(30);
 });
-builder.Services.AddScoped<IEmbeddingService, OllamaEmbeddingService>();
+builder.Services.AddScoped<IEmbeddingService>(sp => sp.GetRequiredService<OllamaEmbeddingService>());
 
 // Notifications — both registered; each checks its own Enabled flag before sending
 builder.Services.AddScoped<INotificationService, EmailNotificationService>();
