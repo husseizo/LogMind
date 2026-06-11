@@ -31,9 +31,12 @@ public class OllamaAiExplanationService : IAiExplanationService
 
     public Task<string> ExplainErrorAsync(LogEntry logEntry)
     {
+        var isError = logEntry.Level is "ERROR" or "FATAL";
         var prompt = $"""
-            You are a senior infrastructure engineer. Analyse the following log error and give a concise explanation (3-5 sentences).
-            Focus on: what went wrong, which system is affected, and the likely root cause.
+            You are a senior infrastructure engineer. Analyse the following log entry and give a concise explanation (3-5 sentences).
+            {(isError
+                ? "Focus on: what went wrong, which system is affected, and the likely root cause."
+                : "Focus on: what this event means, which system or process is involved, and whether any action is needed.")}
 
             Source : {logEntry.Source}
             Level  : {logEntry.Level}
