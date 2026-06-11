@@ -21,6 +21,7 @@ function LevelBadge({ level }: { level: string }) {
 
 export default function LogsPage() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [sources, setSources] = useState<string[]>([]);
   const [query, setQuery] = useState('');
   const [source, setSource] = useState('');
   const [level, setLevel] = useState('');
@@ -28,6 +29,10 @@ export default function LogsPage() {
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<LogEntry | null>(null);
   const [explanation, setExplanation] = useState<string | null>(null);
+
+  useEffect(() => {
+    logsApi.statsBySource().then(stats => setSources(Object.keys(stats))).catch(() => {});
+  }, []);
 
   const fetch = useCallback(() => {
     setLoading(true);
@@ -59,7 +64,7 @@ export default function LogsPage() {
         />
         <select value={source} onChange={e => setSource(e.target.value)} style={inputStyle}>
           <option value="">All Sources</option>
-          {['SAP', 'Shopify', 'Finance', 'MotoFleet'].map(s => <option key={s}>{s}</option>)}
+          {sources.map(s => <option key={s}>{s}</option>)}
         </select>
         <select value={level} onChange={e => setLevel(e.target.value)} style={inputStyle}>
           <option value="">All Levels</option>

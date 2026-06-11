@@ -5,11 +5,24 @@ namespace LogMind.Infrastructure.Services;
 
 public static class LogFileParser
 {
+    // Shared fragment strings for readability
+    private const string TS    = @"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:?\d{2})?";
+    private const string LVL   = @"TRACE|DEBUG|INFO|WARN(?:ING)?|ERROR|FATAL|CRITICAL";
+
     internal static readonly Regex[] LogPatterns =
     [
-        new Regex(@"^(?<timestamp>\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?)\s+(?<level>TRACE|DEBUG|INFO|WARN(?:ING)?|ERROR|FATAL|CRITICAL)\s+(?<message>.+)$", RegexOptions.IgnoreCase | RegexOptions.Compiled),
-        new Regex(@"^\[(?<level>TRACE|DEBUG|INFO|WARN(?:ING)?|ERROR|FATAL|CRITICAL)\]\s+(?<timestamp>\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?)\s+(?<message>.+)$", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+        // 2024-01-01 00:00:00[.frac] LEVEL message  (also handles comma-ms: Python logging)
+        new Regex($@"^(?<timestamp>{TS})\s+(?<level>{LVL})\s+(?<message>.+)$", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+        // [LEVEL] 2024-01-01T00:00:00 message
+        new Regex($@"^\[(?<level>{LVL})\]\s+(?<timestamp>{TS})\s+(?<message>.+)$", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+        // 01/01/2024 00:00:00 LEVEL message  (US date format)
         new Regex(@"^(?<timestamp>\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}:\d{2})\s+(?<level>ERROR|WARN|INFO|DEBUG|FATAL)\s+(?<message>.+)$", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+        // [2024-01-01 00:00:00] [LEVEL] message  /  [2024-01-01 00:00:00] LEVEL message
+        new Regex($@"^\[(?<timestamp>{TS})\]\s+\[?(?<level>{LVL})\]?\s+(?<message>.+)$", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+        // 2024-01-01 00:00:00 | LEVEL | message  /  2024-01-01 00:00:00 - LEVEL - message
+        new Regex($@"^(?<timestamp>{TS})\s*[-|]\s*(?<level>{LVL})\s*[-|]\s*(?<message>.+)$", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+        // LEVEL: 2024-01-01 00:00:00 message  /  LEVEL  2024-01-01T...  message
+        new Regex($@"^(?<level>{LVL})[:\s]+(?<timestamp>{TS})\s+(?<message>.+)$", RegexOptions.IgnoreCase | RegexOptions.Compiled),
     ];
 
     public static async Task<List<LogEntry>> ParseTextStreamAsync(Stream stream, string sourceName, string filePath)
@@ -85,7 +98,10 @@ public static class LogFileParser
         {
             var match = pattern.Match(line);
             if (!match.Success) continue;
-            if (!DateTime.TryParse(match.Groups["timestamp"].Value, out timestamp)) continue;
+            // Normalize comma-separated milliseconds (e.g. Python logging "12:34:56,789" → "12:34:56.789")
+            var tsRaw = match.Groups["timestamp"].Value;
+            var tsNorm = System.Text.RegularExpressions.Regex.Replace(tsRaw, @"(\d{2}:\d{2}:\d{2}),(\d+)", "$1.$2");
+            if (!DateTime.TryParse(tsNorm, null, System.Globalization.DateTimeStyles.RoundtripKind, out timestamp)) continue;
             level = match.Groups["level"].Value;
             message = match.Groups["message"].Value;
             return true;
