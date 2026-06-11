@@ -5,6 +5,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
+    allowedHosts: ['molaslubes.ngrok.app'],
     proxy: {
       '/api': 'http://localhost:5000'
     }
