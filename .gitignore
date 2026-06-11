@@ -1,0 +1,30 @@
+# Build outputs
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# SQLite DB (runtime data)
+*.db
+*.db-shm
+*.db-wal
+
+# Node / frontend
+node_modules/
+dist/
+.vite/
+
+# Environment / secrets
+appsettings.Development.json
+.env
+.env.local
+
+# Logs (don't track sample log files)
+*.log
+
+# Rider / JetBrains
+.idea/
+
+# macOS
+.DS_Store
