@@ -1,11 +1,50 @@
 import axios from 'axios';
 import type { Alert, KnownIssue, LogEntry, Solution, StatEntry } from '../types';
+import { auth } from './auth';
 
 const api = axios.create({ baseURL: '/api' });
+
+// Attach API key to every request
+api.interceptors.request.use(cfg => {
+  const key = auth.get();
+  if (key) cfg.headers['X-Api-Key'] = key;
+  return cfg;
+});
+
+// Broadcast 401 so UI can show the key prompt
+api.interceptors.response.use(
+  r => r,
+  err => {
+    if (err.response?.status === 401) {
+      window.dispatchEvent(new CustomEvent('lm:unauthorized'));
+    }
+    return Promise.reject(err);
+  }
+);
+
+export interface LogQuery {
+  q?: string;
+  source?: string;
+  level?: string;
+  from?: string;
+  to?: string;
+  pageSize?: number;
+  cursorTs?: string;
+  cursorId?: number;
+}
+
+export interface LogQueryResult {
+  items: LogEntry[];
+  hasMore: boolean;
+  nextCursorTs?: string;
+  nextCursorId?: number;
+}
 
 export const logsApi = {
   getAll: (page = 1, pageSize = 50) =>
     api.get<LogEntry[]>(`/logs?page=${page}&pageSize=${pageSize}`).then(r => r.data),
+  query: (params: LogQuery) =>
+    api.get<LogQueryResult>('/logs/query', { params }).then(r => r.data),
   search: (q: string, source?: string, level?: string) =>
     api.get<LogEntry[]>(`/logs/search`, { params: { q, source, level } }).then(r => r.data),
   getErrors: (count = 100) =>
@@ -14,6 +53,8 @@ export const logsApi = {
     api.get<LogEntry>(`/logs/${id}`).then(r => r.data),
   explain: (id: number) =>
     api.get<{ explanation: string }>(`/logs/${id}/explain`).then(r => r.data),
+  chat: (id: number, history: { role: string; content: string }[], question: string) =>
+    api.post<{ reply: string }>(`/logs/${id}/chat`, { history, question }).then(r => r.data),
   statsBySource: () =>
     api.get<StatEntry>('/logs/stats/by-source').then(r => r.data),
   statsByLevel: () =>
@@ -60,6 +101,11 @@ export const uploadApi = {
     fd.append('source', source);
     return api.post<{ count: number; source: string; fileName: string }>('/upload', fd).then(r => r.data);
   },
+};
+
+export const securityApi = {
+  status: () =>
+    axios.get<{ keyRequired: boolean }>('/api/security/status').then(r => r.data),
 };
 
 export const ollamaApi = {

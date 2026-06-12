@@ -20,6 +20,23 @@ public class LogsController : ControllerBase
     public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 50)
         => Ok(await _logs.GetAllAsync(page, pageSize));
 
+    /// <summary>Cursor-paginated filtered query. Returns { items, hasMore, nextCursorTs, nextCursorId }.</summary>
+    [HttpGet("query")]
+    public async Task<IActionResult> Query(
+        [FromQuery] string? q,
+        [FromQuery] string? source,
+        [FromQuery] string? level,
+        [FromQuery] DateTime? from,
+        [FromQuery] DateTime? to,
+        [FromQuery] int pageSize = 50,
+        [FromQuery] DateTime? cursorTs = null,
+        [FromQuery] int? cursorId = null)
+    {
+        var (items, hasMore, nextCursorTs, nextCursorId) =
+            await _logs.QueryAsync(q, source, level, from, to, pageSize, cursorTs, cursorId);
+        return Ok(new { items, hasMore, nextCursorTs, nextCursorId });
+    }
+
     [HttpGet("search")]
     public async Task<IActionResult> Search([FromQuery] string q, [FromQuery] string? source, [FromQuery] string? level)
         => Ok(await _logs.SearchAsync(q, source, level));
@@ -42,6 +59,19 @@ public class LogsController : ControllerBase
         if (entry is null) return NotFound();
         var explanation = await _ai.ExplainErrorAsync(entry);
         return Ok(new { explanation });
+    }
+
+    public sealed record ChatMessage(string Role, string Content);
+    public sealed record ChatRequest(IEnumerable<ChatMessage> History, string Question);
+
+    [HttpPost("{id:int}/chat")]
+    public async Task<IActionResult> Chat(int id, [FromBody] ChatRequest body)
+    {
+        var entry = await _logs.GetByIdAsync(id);
+        if (entry is null) return NotFound();
+        var history = body.History.Select(m => (m.Role, m.Content));
+        var reply = await _ai.ChatAsync(entry, history, body.Question);
+        return Ok(new { reply });
     }
 
     [HttpGet("stats/by-source")]

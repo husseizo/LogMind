@@ -37,4 +37,7 @@ public class StubAiExplanationService : IAiExplanationService
                       string.Join(", ", list.GroupBy(e => e.Source).OrderByDescending(g => g.Count()).Take(3).Select(g => $"{g.Key}({g.Count()})"));
         return Task.FromResult(summary);
     }
+
+    public Task<string> ChatAsync(LogEntry logEntry, IEnumerable<(string Role, string Content)> history, string question)
+        => Task.FromResult("AI chat not yet configured — wire up an LLM provider.");
 }

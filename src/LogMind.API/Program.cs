@@ -1,3 +1,4 @@
+using LogMind.API.Middleware;
 using LogMind.Core.Interfaces;
 using LogMind.Infrastructure.Data;
 using LogMind.Infrastructure.Services;
@@ -55,7 +56,7 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c => c.SwaggerDoc("v1", new() { Title = "LogMind API", Version = "v1" }));
 
 builder.Services.AddCors(opt => opt.AddDefaultPolicy(p =>
-    p.WithOrigins("http://localhost:5173", "http://localhost:3000")
+    p.SetIsOriginAllowed(_ => true)   // allows localhost + ngrok + any tunnel
      .AllowAnyHeader()
      .AllowAnyMethod()));
 
@@ -74,5 +75,6 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors();
+app.UseMiddleware<ApiKeyMiddleware>();
 app.MapControllers();
 app.Run();

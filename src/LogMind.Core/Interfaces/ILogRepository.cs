@@ -5,6 +5,9 @@ namespace LogMind.Core.Interfaces;
 public interface ILogRepository
 {
     Task<IEnumerable<LogEntry>> GetAllAsync(int page = 1, int pageSize = 50);
+    Task<(IEnumerable<LogEntry> Items, bool HasMore, DateTime? NextCursorTs, int? NextCursorId)> QueryAsync(
+        string? query, string? source, string? level, DateTime? from, DateTime? to,
+        int pageSize, DateTime? cursorTs, int? cursorId);
     Task<IEnumerable<LogEntry>> SearchAsync(string query, string? source = null, string? level = null);
     Task<IEnumerable<LogEntry>> GetBySourceAsync(string source);
     Task<IEnumerable<LogEntry>> GetRecentErrorsAsync(int count = 100);

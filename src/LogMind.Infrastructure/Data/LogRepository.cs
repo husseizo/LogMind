@@ -17,6 +17,38 @@ public class LogRepository : ILogRepository
             .Take(pageSize)
             .ToListAsync();
 
+    public async Task<(IEnumerable<LogEntry> Items, bool HasMore, DateTime? NextCursorTs, int? NextCursorId)> QueryAsync(
+        string? query, string? source, string? level, DateTime? from, DateTime? to,
+        int pageSize, DateTime? cursorTs, int? cursorId)
+    {
+        var q = _db.LogEntries.AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(query))
+            q = q.Where(e => e.Message.Contains(query) || (e.StackTrace != null && e.StackTrace.Contains(query)));
+        if (!string.IsNullOrWhiteSpace(source)) q = q.Where(e => e.Source == source);
+        if (!string.IsNullOrWhiteSpace(level))  q = q.Where(e => e.Level == level);
+        if (from.HasValue) q = q.Where(e => e.Timestamp >= from.Value);
+        if (to.HasValue)   q = q.Where(e => e.Timestamp <= to.Value);
+
+        // Cursor: only fetch rows older than the last seen item (constant-speed regardless of depth)
+        if (cursorTs.HasValue && cursorId.HasValue)
+            q = q.Where(e => e.Timestamp < cursorTs.Value ||
+                             (e.Timestamp == cursorTs.Value && e.Id < cursorId.Value));
+
+        // Fetch one extra to detect hasMore without COUNT(*)
+        var items = await q
+            .OrderByDescending(e => e.Timestamp)
+            .ThenByDescending(e => e.Id)
+            .Take(pageSize + 1)
+            .ToListAsync();
+
+        var hasMore = items.Count > pageSize;
+        if (hasMore) items.RemoveAt(items.Count - 1);
+
+        var last = items.LastOrDefault();
+        return (items, hasMore, last?.Timestamp, last?.Id);
+    }
+
     public async Task<IEnumerable<LogEntry>> SearchAsync(string query, string? source = null, string? level = null)
     {
         var q = _db.LogEntries.AsQueryable();

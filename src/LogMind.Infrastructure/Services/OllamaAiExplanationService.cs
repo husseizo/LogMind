@@ -1,6 +1,5 @@
 using LogMind.Core.Interfaces;
 using LogMind.Core.Models;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -33,19 +32,60 @@ public class OllamaAiExplanationService : IAiExplanationService
     {
         var isError = logEntry.Level is "ERROR" or "FATAL";
         var prompt = $"""
-            You are a senior infrastructure engineer. Analyse the following log entry and give a concise explanation (3-5 sentences).
+            You are a senior infrastructure engineer debugging a production system.
+            Analyse this log entry and respond using EXACTLY this format — no deviation:
+
+            **What happened:** (one sentence — the specific event or failure)
+            **Component affected:** (exact class, service, module, or function extracted from the message or stack trace — never say "unknown")
+            **Root cause:** (the most likely technical reason this occurred, be specific)
+            **Fix steps:**
+            1. (concrete action)
+            2. (concrete action)
+            3. (add more if needed)
+            **What NOT to change:** (existing logic or infrastructure to preserve while fixing)
+
+            Log entry:
+            Source : {logEntry.Source}
+            Level  : {logEntry.Level}
+            Time   : {logEntry.Timestamp:u}
+            Message: {logEntry.Message}
+            {(logEntry.StackTrace is not null ? $"Stack trace:\n{logEntry.StackTrace}" : "")}
+
             {(isError
-                ? "Focus on: what went wrong, which system is affected, and the likely root cause."
-                : "Focus on: what this event means, which system or process is involved, and whether any action is needed.")}
+                ? "This is an ERROR/FATAL — be precise about what broke and how to fix it safely."
+                : "This is informational — focus on what the event means and whether any action is needed.")}
+            """;
+
+        return OllamaChatAsync([new OllamaMessage { Role = "user", Content = prompt }]);
+    }
+
+    public async Task<string> ChatAsync(LogEntry logEntry, IEnumerable<(string Role, string Content)> history, string question)
+    {
+        var systemContent = $"""
+            You are a senior infrastructure engineer helping to debug and fix a specific production log entry.
+            Keep this log entry as your reference for the entire conversation.
 
             Source : {logEntry.Source}
             Level  : {logEntry.Level}
             Time   : {logEntry.Timestamp:u}
             Message: {logEntry.Message}
             {(logEntry.StackTrace is not null ? $"Stack trace:\n{logEntry.StackTrace}" : "")}
+
+            Rules:
+            - Always answer in the context of this specific log entry and source system ({logEntry.Source}).
+            - When suggesting fixes, be concrete and specific — name the exact function, config key, or code path.
+            - Never suggest changes that could break existing logic or infrastructure unrelated to this issue.
+            - If you need more info to answer precisely, ask the user for it.
             """;
 
-        return ChatAsync(prompt);
+        var messages = new List<OllamaMessage> { new() { Role = "system", Content = systemContent } };
+
+        foreach (var (role, content) in history)
+            messages.Add(new OllamaMessage { Role = role, Content = content });
+
+        messages.Add(new OllamaMessage { Role = "user", Content = question });
+
+        return await OllamaChatAsync(messages);
     }
 
     public Task<string> SuggestSolutionAsync(LogEntry logEntry, IEnumerable<KnownIssue> similarIssues)
@@ -68,7 +108,7 @@ public class OllamaAiExplanationService : IAiExplanationService
             3. How to prevent recurrence (1-2 sentences)
             """;
 
-        return ChatAsync(prompt);
+        return OllamaChatAsync([new OllamaMessage { Role = "user", Content = prompt }]);
     }
 
     public Task<string> SummarizeTrendAsync(IEnumerable<LogEntry> entries)
@@ -91,18 +131,18 @@ public class OllamaAiExplanationService : IAiExplanationService
             {string.Join("\n", sample)}
             """;
 
-        return ChatAsync(prompt);
+        return OllamaChatAsync([new OllamaMessage { Role = "user", Content = prompt }]);
     }
 
     // ── Ollama HTTP ─────────────────────────────────────────────────────────
 
-    private async Task<string> ChatAsync(string prompt)
+    private async Task<string> OllamaChatAsync(List<OllamaMessage> messages)
     {
         var request = new OllamaChatRequest
         {
-            Model  = _settings.Model,
-            Stream = false,
-            Messages = [new OllamaMessage { Role = "user", Content = prompt }]
+            Model    = _settings.Model,
+            Stream   = false,
+            Messages = messages
         };
 
         try
@@ -115,8 +155,8 @@ public class OllamaAiExplanationService : IAiExplanationService
         }
         catch (HttpRequestException ex)
         {
-            _logger.LogWarning(ex, "Ollama unavailable — falling back to stub explanation");
-            return $"[Ollama offline] {FallbackExplanation(prompt)}";
+            _logger.LogWarning(ex, "Ollama unavailable");
+            return "[Ollama offline] AI explanation unavailable — check Ollama is running on the configured host.";
         }
         catch (Exception ex)
         {
@@ -131,16 +171,6 @@ public class OllamaAiExplanationService : IAiExplanationService
             $"- {i.Title} ({i.Source}): {i.Description}" +
             (i.Solutions.FirstOrDefault() is { } s ? $"\n  Fix: {s.Steps.Split('\n')[0]}" : ""));
         return string.Join("\n", lines);
-    }
-
-    // Minimal inline fallback so the API never returns nothing even if Ollama is down
-    private static string FallbackExplanation(string prompt)
-    {
-        if (prompt.Contains("ExplainError", StringComparison.OrdinalIgnoreCase))
-            return "AI explanation unavailable — check Ollama is running on the configured host.";
-        if (prompt.Contains("SuggestSolution", StringComparison.OrdinalIgnoreCase))
-            return "AI suggestion unavailable — check Ollama is running on the configured host.";
-        return "AI summary unavailable — check Ollama is running on the configured host.";
     }
 
     // ── DTOs ────────────────────────────────────────────────────────────────

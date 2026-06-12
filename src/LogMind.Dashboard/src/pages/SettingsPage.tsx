@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ollamaApi } from '../api/client';
+import { auth } from '../api/auth';
 
 type OllamaConfig = { baseUrl: string; model: string; embeddingModel: string; timeoutSeconds: number };
 
@@ -84,6 +85,58 @@ function ModelCard({
   );
 }
 
+function ApiKeySection() {
+  const [keyInput, setKeyInput] = useState(auth.get());
+  const [saved, setSaved] = useState(false);
+
+  const handleSave = () => {
+    auth.set(keyInput.trim());
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  const handleClear = () => {
+    auth.clear();
+    setKeyInput('');
+  };
+
+  return (
+    <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #e2e8f0', padding: '20px 24px', marginBottom: 24 }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 }}>
+        API Key (Browser)
+      </div>
+      <p style={{ fontSize: 13, color: '#64748b', marginBottom: 14 }}>
+        The key stored in this browser. Must match{' '}
+        <code style={{ background: '#f1f5f9', padding: '1px 5px', borderRadius: 3, fontSize: 12 }}>
+          appsettings.json → Security.ApiKey
+        </code>
+      </p>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input
+          type="password"
+          value={keyInput}
+          onChange={e => setKeyInput(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && handleSave()}
+          placeholder="lm-your-secret-key"
+          style={{ flex: 1, padding: '8px 12px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 13, fontFamily: 'monospace' }}
+        />
+        <button
+          onClick={handleSave}
+          style={{ padding: '8px 16px', borderRadius: 6, background: saved ? '#16a34a' : '#0f172a', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600, minWidth: 80 }}
+        >
+          {saved ? 'Saved ✓' : 'Save'}
+        </button>
+        <button
+          onClick={handleClear}
+          style={{ padding: '8px 12px', borderRadius: 6, background: 'none', border: '1px solid #fca5a5', color: '#ef4444', cursor: 'pointer', fontSize: 13 }}
+        >
+          Clear
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const [config, setConfig] = useState<OllamaConfig | null>(null);
   const [models, setModels] = useState<string[]>([]);
@@ -157,6 +210,8 @@ export default function SettingsPage() {
           {switchError}
         </div>
       )}
+
+      <ApiKeySection />
 
       {!config ? (
         <div style={{ color: '#94a3b8', fontSize: 14 }}>Loading…</div>
