@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef, KeyboardEvent } from 'react';
 import { logsApi } from '../api/client';
 import type { LogEntry } from '../types';
 import type { LogQuery } from '../api/client';
+import { useIsMobile } from '../hooks/useIsMobile';
 
 interface ChatMsg { role: 'user' | 'assistant'; content: string; }
 
@@ -45,9 +46,12 @@ function LevelBadge({ level }: { level: string }) {
   );
 }
 
+const BOTTOM_NAV_H = 60; // height of mobile bottom nav bar
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function LogsPage() {
+  const isMobile = useIsMobile();
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const [sources, setSources] = useState<string[]>([]);
@@ -159,17 +163,19 @@ export default function LogsPage() {
   }, []);
 
   const handleExplain = (entry: LogEntry) => {
-    // If a panel for this entry already exists, just restore it
     const existing = panels.find(p => p.entry.id === entry.id);
     if (existing) {
-      updatePanel(existing.key, { minimized: false });
+      // On mobile minimize all others, restore this one
+      if (isMobile) setPanels(prev => prev.map(p => ({ ...p, minimized: p.key !== existing.key })));
+      else updatePanel(existing.key, { minimized: false });
       return;
     }
     const key = `${entry.id}-${Date.now()}`;
-    setPanels(prev => [...prev, {
-      key, entry, explanation: null,
-      chatHistory: [], chatInput: '', chatLoading: false, minimized: false,
-    }]);
+    // On mobile, minimize all existing panels before opening new one
+    setPanels(prev => [
+      ...(isMobile ? prev.map(p => ({ ...p, minimized: true })) : prev),
+      { key, entry, explanation: null, chatHistory: [], chatInput: '', chatLoading: false, minimized: false },
+    ]);
     logsApi.explain(entry.id)
       .then(res => updatePanel(key, { explanation: res.explanation }))
       .catch(() => updatePanel(key, { explanation: '[Error fetching explanation]' }));
@@ -304,10 +310,61 @@ export default function LogsPage() {
         )}
       </div>
 
-      {/* Log table */}
+      {/* Log list — card on mobile, table on desktop */}
       {loading ? (
         <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>Loading...</div>
+      ) : isMobile ? (
+        /* ── Mobile card list ── */
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {logs.map(log => {
+            const isOpen = panels.some(p => p.entry.id === log.id);
+            const expanded = expandedRow === log.id;
+            return (
+              <div key={log.id} style={{
+                background: isOpen ? '#f0f9ff' : '#fff',
+                borderRadius: 10, padding: '12px 14px',
+                boxShadow: '0 1px 3px rgba(0,0,0,.07)',
+                border: isOpen ? '1px solid #bfdbfe' : '1px solid #f1f5f9',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  <LevelBadge level={log.level} />
+                  <span style={{ fontWeight: 600, fontSize: 12, color: '#334155' }}>{log.source}</span>
+                  <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 'auto' }}>
+                    {new Date(log.timestamp).toLocaleString()}
+                  </span>
+                </div>
+                <p
+                  onClick={() => setExpandedRow(expanded ? null : log.id)}
+                  style={{
+                    fontSize: 13, color: '#334155', margin: '0 0 10px',
+                    whiteSpace: expanded ? 'pre-wrap' : 'nowrap',
+                    overflow: expanded ? 'visible' : 'hidden',
+                    textOverflow: expanded ? 'unset' : 'ellipsis',
+                    wordBreak: 'break-word', cursor: 'pointer',
+                  }}
+                >
+                  {log.message}
+                </p>
+                {expanded && log.stackTrace && (
+                  <pre style={{ background: '#f8fafc', padding: 8, borderRadius: 6, fontSize: 10, overflowX: 'auto', marginBottom: 10, border: '1px solid #e2e8f0', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                    {log.stackTrace}
+                  </pre>
+                )}
+                <button
+                  onClick={() => handleExplain(log)}
+                  style={{ ...btnStyle, width: '100%', textAlign: 'center', ...(isOpen ? { borderColor: '#3b82f6', color: '#2563eb', background: '#eff6ff' } : {}) }}
+                >
+                  {isOpen ? '↗ Analysing' : 'AI Explain'}
+                </button>
+              </div>
+            );
+          })}
+          {logs.length === 0 && (
+            <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>No logs found</div>
+          )}
+        </div>
       ) : (
+        /* ── Desktop table ── */
         <div style={{ background: '#fff', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,.08)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
@@ -383,22 +440,65 @@ export default function LogsPage() {
       </div>
 
       {/* Floating chat panels */}
-      <div style={{
-        position: 'fixed', bottom: 0, right: 16, zIndex: 200,
-        display: 'flex', flexDirection: 'row-reverse', gap: PANEL_GAP, alignItems: 'flex-end',
-        pointerEvents: 'none',
-      }}>
-        {panels.map(panel => (
-          <ChatPanel
-            key={panel.key}
-            panel={panel}
-            onMinimize={() => toggleMinimize(panel.key)}
-            onClose={() => closePanel(panel.key)}
-            onInputChange={v => updatePanel(panel.key, { chatInput: v })}
-            onSend={() => sendChat(panel)}
-          />
-        ))}
-      </div>
+      {isMobile ? (
+        /* Mobile: full-width stack above the bottom nav */
+        <div style={{
+          position: 'fixed', bottom: BOTTOM_NAV_H, left: 0, right: 0,
+          zIndex: 501, display: 'flex', flexDirection: 'column', alignItems: 'stretch',
+          pointerEvents: 'none',
+        }}>
+          {/* Minimized tabs row */}
+          {panels.filter(p => p.minimized).length > 0 && (
+            <div style={{ display: 'flex', gap: 6, padding: '4px 8px', background: 'rgba(15,23,42,.85)', overflowX: 'auto', pointerEvents: 'all' }}>
+              {panels.filter(p => p.minimized).map(panel => {
+                const [, levelColor] = (LEVEL_BADGE[panel.entry.level] ?? '#f1f5f9|#64748b').split('|');
+                return (
+                  <button
+                    key={panel.key}
+                    onClick={() => { setPanels(prev => prev.map(p => ({ ...p, minimized: p.key !== panel.key }))); }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#1e293b', border: 'none', borderRadius: 6, padding: '5px 10px', cursor: 'pointer', flexShrink: 0 }}
+                  >
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: levelColor, display: 'inline-block' }} />
+                    <span style={{ color: '#e2e8f0', fontSize: 11, fontWeight: 600 }}>{panel.entry.source}</span>
+                    <span onClick={e => { e.stopPropagation(); closePanel(panel.key); }} style={{ color: '#64748b', fontSize: 14, marginLeft: 2 }}>×</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {/* Expanded panel — only the non-minimized one */}
+          {panels.filter(p => !p.minimized).slice(-1).map(panel => (
+            <ChatPanel
+              key={panel.key}
+              panel={panel}
+              isMobile={true}
+              onMinimize={() => toggleMinimize(panel.key)}
+              onClose={() => closePanel(panel.key)}
+              onInputChange={v => updatePanel(panel.key, { chatInput: v })}
+              onSend={() => sendChat(panel)}
+            />
+          ))}
+        </div>
+      ) : (
+        /* Desktop: side-by-side panels from bottom-right */
+        <div style={{
+          position: 'fixed', bottom: 0, right: 16, zIndex: 200,
+          display: 'flex', flexDirection: 'row-reverse', gap: PANEL_GAP, alignItems: 'flex-end',
+          pointerEvents: 'none',
+        }}>
+          {panels.map(panel => (
+            <ChatPanel
+              key={panel.key}
+              panel={panel}
+              isMobile={false}
+              onMinimize={() => toggleMinimize(panel.key)}
+              onClose={() => closePanel(panel.key)}
+              onInputChange={v => updatePanel(panel.key, { chatInput: v })}
+              onSend={() => sendChat(panel)}
+            />
+          ))}
+        </div>
+      )}
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
@@ -409,13 +509,14 @@ export default function LogsPage() {
 
 interface ChatPanelProps {
   panel: Panel;
+  isMobile: boolean;
   onMinimize: () => void;
   onClose: () => void;
   onInputChange: (v: string) => void;
   onSend: () => void;
 }
 
-function ChatPanel({ panel, onMinimize, onClose, onInputChange, onSend }: ChatPanelProps) {
+function ChatPanel({ panel, isMobile, onMinimize, onClose, onInputChange, onSend }: ChatPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const { entry, explanation, chatHistory, chatInput, chatLoading, minimized } = panel;
 
@@ -430,17 +531,20 @@ function ChatPanel({ panel, onMinimize, onClose, onInputChange, onSend }: ChatPa
   const headerBg = LEVEL_HEADER_BG[entry.level] ?? '#f8fafc';
   const [, levelColor] = (LEVEL_BADGE[entry.level] ?? '#f1f5f9|#64748b').split('|');
 
+  // On mobile: full-width, taller panel; desktop: fixed 340px
+  const panelHeight = isMobile ? Math.min(window.innerHeight * 0.75, 560) : 520;
+
   return (
     <div style={{
-      width: PANEL_WIDTH,
+      width: isMobile ? '100%' : PANEL_WIDTH,
       background: '#fff',
-      borderRadius: minimized ? '10px 10px 0 0' : '12px 12px 0 0',
+      borderRadius: isMobile ? 0 : (minimized ? '10px 10px 0 0' : '12px 12px 0 0'),
       boxShadow: '0 -2px 20px rgba(0,0,0,.15)',
       display: 'flex', flexDirection: 'column',
       overflow: 'hidden',
       pointerEvents: 'all',
       transition: 'height 0.2s ease',
-      height: minimized ? 44 : 520,
+      height: minimized ? 0 : panelHeight,  // mobile minimized handled by tabs row
     }}>
       {/* Panel header — always visible, click to toggle minimize */}
       <div
