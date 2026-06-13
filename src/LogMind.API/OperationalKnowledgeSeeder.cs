@@ -190,5 +190,164 @@ Do not treat SAP and Odoo errors separately when logs indicate synchronization o
         });
 
         await db.SaveChangesAsync();
+
+        // ── SAPReplit Autohub entry ───────────────────────────────────────────
+        const string autohubTitle = "SAPReplit Autohub Frontend App and ProductCache Synchronization Workflow";
+
+        var autohubExists = await db.OperationalKnowledge
+            .AnyAsync(k => k.Title == autohubTitle);
+
+        if (!autohubExists)
+        {
+            db.OperationalKnowledge.Add(new OperationalKnowledge
+            {
+                Title    = autohubTitle,
+                Category = "Business Process / Integration Architecture",
+                System   = "SAPReplit Autohub + SAP + productcache.db",
+                Tags     = "SAPReplit,Autohub,Replit,SAP,productcache.db,Products,Customers,Orders,Invoices,Payments,Quartz,SyncDelay,CacheStale,SQLite,OpenInvoice,ClosedInvoice,DeltaSync",
+
+                // Applicable to Sapreplit Autohub ONLY.
+                // Do not apply to SapOdoo Main, Molaslubes Neon, or Odoo 19.
+                ApplicableSources = """["Sapreplit Autohub"]""",
+
+                Content = """
+Scope:
+This operational knowledge applies only to logs from:
+- Sapreplit Autohub
+
+It must not be applied to:
+- SapOdoo Main
+- MolasLubes Neon
+- Odoo 19 logs
+
+---
+
+SAPReplit Autohub is a frontend Replit application that connects with SAP through cached data and selected direct SAP operations.
+
+SAP remains the main source of truth for:
+- Products
+- Customers
+- Orders
+- Invoices
+- Payments
+
+SAPReplit Autohub directly creates:
+- Customers in SAP
+- Orders in SAP
+
+SAPReplit Autohub reads business data from SAP through productcache.db.
+
+The productcache.db contains cached SAP data for:
+- Products
+- Customers
+- Orders
+- Invoices
+- Payments
+
+Normal workflow:
+SAP
+→ productcache.db
+→ SAPReplit Autohub frontend
+
+Customer creation workflow:
+SAPReplit Autohub
+→ SAP customer creation
+→ SAP returns customer information
+→ productcache.db should synchronize the updated customer data
+
+Order creation workflow:
+SAPReplit Autohub
+→ SAP order creation
+→ SAP returns order information
+→ productcache.db should synchronize the updated order data
+
+Invoice and payment workflow:
+SAP invoices are read through productcache.db.
+
+When a payment is completed:
+- The related open invoice in SAP should become closed.
+- productcache.db should update quickly.
+- SAPReplit Autohub should show the invoice as closed, not open.
+
+Product synchronization workflow:
+Products are read from SAP through productcache.db.
+
+When product information changes in SAP:
+- productcache.db should update the product data.
+- SAPReplit Autohub should display the latest product information.
+- Stock, price, item status, and customer/order-related references should not remain stale.
+
+Common issue pattern:
+The most common problem in SAPReplit Autohub is delayed synchronization.
+
+Many issues are caused by:
+- Quartz jobs running late
+- Quartz jobs waiting for each other
+- Background sync queue delay
+- productcache.db not refreshing fast enough
+- Payment status not updating quickly
+- Open invoices staying open in cache after payment
+- Product changes in SAP not appearing quickly in cache
+- Customer or order created in SAP but not visible quickly in the frontend
+- Cache data becoming stale
+- Multiple sync jobs competing or blocking each other
+- Long-running jobs delaying urgent updates
+
+Business impact:
+If invoice/payment synchronization is delayed:
+- Paid invoices may still appear open in the frontend.
+- Finance users may think payment was not completed.
+- Customer account status may look incorrect.
+- Reporting may show inaccurate unpaid invoice totals.
+
+If product synchronization is delayed:
+- Frontend may show old stock, price, or product details.
+- Orders may be created using stale product information.
+- Users may lose trust in the frontend data.
+
+If customer/order synchronization is delayed:
+- Newly created customers or orders may not appear immediately.
+- Users may retry creation and accidentally cause duplicate attempts.
+- Support teams may think SAP creation failed even when SAP succeeded.
+
+Troubleshooting guidance:
+When analyzing Sapreplit Autohub logs, always check:
+
+1. Was the action direct to SAP or from productcache.db?
+2. Did SAP complete the operation successfully?
+3. Did productcache.db update after SAP changed?
+4. Which Quartz job was responsible for the update?
+5. Was the Quartz job delayed, blocked, skipped, or still running?
+6. Did another sync job hold the database lock?
+7. Did SQLite return SQLITE_BUSY or timeout?
+8. Did the frontend read stale cache data before sync completed?
+9. Is the issue related to product, customer, order, invoice, or payment synchronization?
+
+Important:
+For SAPReplit Autohub, many frontend problems are not SAP creation failures. They are often cache synchronization delays.
+
+When a log shows a stale invoice, stale product, missing order, or delayed customer update, first investigate productcache.db synchronization and Quartz job timing before assuming SAP failed.
+
+Recommended improvements:
+- Prioritize payment/invoice status sync over slower full cache jobs.
+- Use delta sync for invoices, payments, products, customers, and orders.
+- Avoid long-running full sync jobs blocking urgent updates.
+- Add separate Quartz jobs for high-priority payment updates.
+- Add job locking so the same sync does not run twice.
+- Add job timeout monitoring.
+- Add last successful sync timestamp per entity.
+- Add dashboard indicators showing cache freshness.
+- Add alerts when invoice/payment cache is stale.
+- Add alerts when productcache.db has not updated recently.
+- Add retry logic for failed SAP reads.
+- Add WAL mode and proper SQLite busy timeout settings.
+""",
+                IsActive  = true,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            });
+
+            await db.SaveChangesAsync();
+        }
     }
 }
