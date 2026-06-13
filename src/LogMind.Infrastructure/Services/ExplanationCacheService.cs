@@ -125,9 +125,9 @@ public class ExplanationCacheService
 
         // ── Full miss: retrieve RAG context then call Ollama ─────────────────
         _logger.LogDebug("Cache miss — building RAG context for {Source}/{Level}", entry.Source, entry.Level);
-        var context = await BuildExplainContextAsync(entry);
-        _logger.LogDebug("RAG context: {Issues} known issues, {Logs} similar logs",
-            context.SimilarIssues.Count, context.SimilarLogs.Count);
+        var context = await BuildExplainContextAsync(entry, candidates);
+        _logger.LogDebug("RAG context: {Issues} known issues, {Logs} similar logs, {Prev} previous explanations",
+            context.SimilarIssues.Count, context.SimilarLogs.Count, context.PreviousExplanations.Count);
         var explanation = await _ollama.ExplainErrorAsync(entry, context);
 
         if (!IsOllamaStub(explanation))
@@ -166,7 +166,9 @@ public class ExplanationCacheService
 
     // ── RAG context builder ───────────────────────────────────────────────────
 
-    private async Task<ExplainContext> BuildExplainContextAsync(LogEntry entry)
+    private async Task<ExplainContext> BuildExplainContextAsync(
+        LogEntry entry,
+        IEnumerable<AiExplanationCache> tier2Candidates)
     {
         try
         {
@@ -176,12 +178,22 @@ public class ExplanationCacheService
             await Task.WhenAll(issuesTask, logsTask);
 
             var issues = (await issuesTask).ToList();
+
             var similarLogs = (await logsTask)
                 .Where(l => l.Id != entry.Id && l.Level is "ERROR" or "FATAL" or "WARN")
                 .Take(3)
                 .ToList();
 
-            return new ExplainContext(issues, similarLogs);
+            // Reuse the Tier-2 candidates already in memory — no extra DB call.
+            // These are non-invalidated previous explanations for the same source,
+            // ordered by most recently used, giving the AI prior reasoning context.
+            var prevExplanations = tier2Candidates
+                .Where(c => !c.IsInvalidated)
+                .OrderByDescending(c => c.LastUsedAt)
+                .Take(3)
+                .ToList();
+
+            return new ExplainContext(issues, similarLogs, prevExplanations);
         }
         catch (Exception ex)
         {

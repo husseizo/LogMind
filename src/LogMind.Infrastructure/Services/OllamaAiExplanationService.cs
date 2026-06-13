@@ -93,11 +93,23 @@ public class OllamaAiExplanationService : IAiExplanationService
         return OllamaChatAsync([new OllamaMessage { Role = "user", Content = prompt }]);
     }
 
+    // Score = WorkedCount*10 + Upvotes*3 - FailedCount*5
+    private static int SolutionScore(Solution s)
+    {
+        var worked = s.Feedback.Count(f => f.Worked);
+        var failed = s.Feedback.Count(f => !f.Worked);
+        return worked * 10 + s.Upvotes * 3 - failed * 5;
+    }
+
     private static string BuildRetrievedContextBlock(ExplainContext ctx)
     {
         var sb = new System.Text.StringBuilder();
 
-        if (ctx.SimilarIssues.Count == 0 && ctx.SimilarLogs.Count == 0)
+        var hasContent = ctx.SimilarIssues.Count > 0
+                      || ctx.SimilarLogs.Count > 0
+                      || ctx.PreviousExplanations.Count > 0;
+
+        if (!hasContent)
         {
             sb.AppendLine("No relevant context retrieved from the LogMind knowledge base.");
             return sb.ToString();
@@ -113,19 +125,21 @@ public class OllamaAiExplanationService : IAiExplanationService
                 if (!string.IsNullOrWhiteSpace(issue.Description))
                     sb.AppendLine($"  Description: {Truncate(issue.Description, 200)}");
 
-                var solutions = issue.Solutions.OrderByDescending(s => s.Upvotes).Take(3).ToList();
+                // Rank by composite score: WorkedCount*10 + Upvotes*3 - FailedCount*5
+                var solutions = issue.Solutions.OrderByDescending(SolutionScore).Take(3).ToList();
                 if (solutions.Count > 0)
                 {
-                    sb.AppendLine("  Solutions (ranked by upvotes):");
+                    sb.AppendLine("  Solutions (ranked by worked feedback + upvotes − failures):");
                     foreach (var sol in solutions)
                     {
-                        var workedCount = sol.Feedback.Count(f => f.Worked);
-                        var failedCount = sol.Feedback.Count(f => !f.Worked);
-                        var feedbackTag = sol.Feedback.Count > 0
-                            ? $" | ✓ {workedCount} worked, ✗ {failedCount} failed"
-                            : "";
-                        var reviewTag = sol.NeedsReview ? " [⚠ NEEDS REVIEW]" : "";
-                        sb.AppendLine($"    [{sol.Upvotes} upvotes{feedbackTag}{reviewTag}] \"{sol.Title}\"");
+                        var worked = sol.Feedback.Count(f => f.Worked);
+                        var failed = sol.Feedback.Count(f => !f.Worked);
+                        var score  = SolutionScore(sol);
+                        var stats  = sol.Feedback.Count > 0
+                            ? $"score={score} | ✓ {worked} worked, ✗ {failed} failed, ↑ {sol.Upvotes} upvotes"
+                            : $"↑ {sol.Upvotes} upvotes (no feedback yet)";
+                        var reviewTag = sol.NeedsReview ? " [⚠ NEEDS REVIEW — solution reliability is in question]" : "";
+                        sb.AppendLine($"    [{stats}{reviewTag}] \"{sol.Title}\"");
                         sb.AppendLine($"      Steps: {Truncate(sol.Steps, 200)}");
                         if (!string.IsNullOrWhiteSpace(sol.References))
                             sb.AppendLine($"      Ref: {sol.References}");
@@ -148,6 +162,18 @@ public class OllamaAiExplanationService : IAiExplanationService
                 sb.AppendLine($"  {Truncate(log.Message, 180)}");
                 if (log.StackTrace is not null)
                     sb.AppendLine($"  Trace: {Truncate(log.StackTrace, 120)}");
+                sb.AppendLine();
+            }
+        }
+
+        if (ctx.PreviousExplanations.Count > 0)
+        {
+            sb.AppendLine("PREVIOUS AI EXPLANATIONS (same source, similar messages — for pattern recognition):");
+            foreach (var prev in ctx.PreviousExplanations)
+            {
+                sb.AppendLine($"  [{prev.Level}] cached {prev.LastUsedAt:u} | used {prev.HitCount}x");
+                sb.AppendLine($"  Message context: {Truncate(prev.NormalizedMessage, 160)}");
+                sb.AppendLine($"  Prior explanation summary: {Truncate(prev.ExplanationJson, 300)}");
                 sb.AppendLine();
             }
         }
