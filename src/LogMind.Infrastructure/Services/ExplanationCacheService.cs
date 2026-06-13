@@ -42,6 +42,18 @@ public class ExplanationCacheService
     }
 
     /// <summary>
+    /// Invalidates the cached explanation for this log entry so the next explain call
+    /// calls Ollama again. Called when the user marks an explanation as "not helpful".
+    /// </summary>
+    public async Task InvalidateExplanationAsync(LogEntry entry)
+    {
+        var normalized = MessageNormalizer.Normalize(entry.Message);
+        var hash = MessageNormalizer.ComputeHash(entry.Source, normalized);
+        await _cache.InvalidateByHashAsync(hash);
+        _logger.LogInformation("Explanation invalidated by user feedback for {Source}/{Level}", entry.Source, entry.Level);
+    }
+
+    /// <summary>
     /// Returns an AI explanation for the given log entry, using the cache cascade:
     ///   Tier 1 (exact hash) → Tier 2 (string similarity) → Tier 3 (embedding) → Ollama.
     /// Only calls Ollama when all three tiers miss. Never writes to cache when Ollama is offline.

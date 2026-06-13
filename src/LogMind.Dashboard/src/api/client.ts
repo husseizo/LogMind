@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Alert, KnownIssue, LogEntry, Solution, StatEntry } from '../types';
+import type { Alert, FeedbackResult, KnownIssue, LogEntry, Solution, StatEntry } from '../types';
 import { auth } from './auth';
 
 const api = axios.create({ baseURL: '/api' });
@@ -53,6 +53,8 @@ export const logsApi = {
     api.get<LogEntry>(`/logs/${id}`).then(r => r.data),
   explain: (id: number) =>
     api.get<{ explanation: string }>(`/logs/${id}/explain`).then(r => r.data),
+  explanationFeedback: (id: number, helpful: boolean) =>
+    api.post<{ invalidated: boolean }>(`/logs/${id}/explain/feedback`, { helpful }).then(r => r.data),
   chat: (id: number, history: { role: string; content: string }[], question: string) =>
     api.post<{ reply: string }>(`/logs/${id}/chat`, { history, question }).then(r => r.data),
   statsBySource: () =>
@@ -81,6 +83,8 @@ export const solutionsApi = {
     api.delete(`/issues/${issueId}/solutions/${id}`),
   upvote: (issueId: number, id: number) =>
     api.post<{ upvotes: number }>(`/issues/${issueId}/solutions/${id}/upvote`).then(r => r.data),
+  feedback: (issueId: number, id: number, data: { worked: boolean; logEntryId?: number; note?: string }) =>
+    api.post<FeedbackResult>(`/issues/${issueId}/solutions/${id}/feedback`, data).then(r => r.data),
 };
 
 export const alertsApi = {

@@ -64,6 +64,26 @@ public class LogsController : ControllerBase
         return Ok(new { explanation });
     }
 
+    public sealed record ExplainFeedbackRequest(bool Helpful);
+
+    /// <summary>
+    /// Records user feedback on an AI explanation.
+    /// When Helpful = false the cached explanation is invalidated so the next call to
+    /// GET /{id}/explain regenerates a fresh response from Ollama.
+    /// POST /api/logs/{id}/explain/feedback   body: { "helpful": false }
+    /// </summary>
+    [HttpPost("{id:int}/explain/feedback")]
+    public async Task<IActionResult> ExplainFeedback(int id, [FromBody] ExplainFeedbackRequest body)
+    {
+        var entry = await _logs.GetByIdAsync(id);
+        if (entry is null) return NotFound();
+
+        if (!body.Helpful)
+            await _explanationCache.InvalidateExplanationAsync(entry);
+
+        return Ok(new { invalidated = !body.Helpful });
+    }
+
     public sealed record ChatMessage(string Role, string Content);
     public sealed record ChatRequest(IEnumerable<ChatMessage> History, string Question);
 

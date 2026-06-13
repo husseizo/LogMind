@@ -17,7 +17,15 @@ export interface Solution {
   steps: string;
   references?: string;
   upvotes: number;
+  needsReview: boolean;
   createdAt: string;
+}
+
+export interface FeedbackResult {
+  workedCount: number;
+  failedCount: number;
+  needsReview: boolean;
+  upvotes: number;
 }
 
 export interface KnownIssue {

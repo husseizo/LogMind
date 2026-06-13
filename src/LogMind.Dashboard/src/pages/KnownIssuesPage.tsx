@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { issuesApi, solutionsApi } from '../api/client';
-import type { KnownIssue, Solution } from '../types';
+import type { FeedbackResult, KnownIssue, Solution } from '../types';
 
 // ── Solution form (add / edit) ───────────────────────────────────────────────
 function SolutionForm({
@@ -62,8 +62,12 @@ function SolutionCard({
   solution: Solution;
   onChange: (updated: Solution | null) => void;
 }) {
-  const [editing, setEditing] = useState(false);
-  const [upvotes, setUpvotes] = useState(solution.upvotes);
+  const [editing, setEditing]           = useState(false);
+  const [upvotes, setUpvotes]           = useState(solution.upvotes);
+  const [feedbackGiven, setFeedbackGiven] = useState<'worked' | 'not-worked' | null>(null);
+  const [feedbackResult, setFeedbackResult] = useState<FeedbackResult | null>(null);
+  const [feedbackLoading, setFeedbackLoading] = useState(false);
+  const [needsReview, setNeedsReview]   = useState(solution.needsReview ?? false);
 
   const handleDelete = async () => {
     if (!confirm(`Delete "${solution.title}"?`)) return;
@@ -76,6 +80,20 @@ function SolutionCard({
     setUpvotes(res.upvotes);
   };
 
+  const handleFeedback = async (worked: boolean) => {
+    if (feedbackGiven || feedbackLoading) return;
+    setFeedbackLoading(true);
+    try {
+      const res = await solutionsApi.feedback(issue.id, solution.id, { worked });
+      setFeedbackResult(res);
+      setFeedbackGiven(worked ? 'worked' : 'not-worked');
+      setUpvotes(res.upvotes);
+      setNeedsReview(res.needsReview);
+    } finally {
+      setFeedbackLoading(false);
+    }
+  };
+
   if (editing) return (
     <SolutionForm
       issueId={issue.id}
@@ -86,19 +104,66 @@ function SolutionCard({
   );
 
   return (
-    <div style={{ background: '#f8fafc', borderRadius: 8, padding: 14, marginBottom: 10, border: '1px solid #e2e8f0' }}>
+    <div style={{ background: '#f8fafc', borderRadius: 8, padding: 14, marginBottom: 10, border: `1px solid ${needsReview ? '#fca5a5' : '#e2e8f0'}` }}>
+      {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-        <strong style={{ fontSize: 14 }}>{solution.title}</strong>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <strong style={{ fontSize: 14 }}>{solution.title}</strong>
+          {needsReview && (
+            <span style={{ fontSize: 10, fontWeight: 700, background: '#fef2f2', color: '#b91c1c', border: '1px solid #fca5a5', borderRadius: 4, padding: '1px 6px' }}>
+              ⚠ Needs Review
+            </span>
+          )}
+        </div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0, marginLeft: 12 }}>
           <button onClick={handleUpvote} style={{ ...ghostBtn, fontSize: 12 }}>▲ {upvotes}</button>
           <button onClick={() => setEditing(true)} style={{ ...ghostBtn, fontSize: 12 }}>Edit</button>
           <button onClick={handleDelete} style={{ ...dangerBtn, fontSize: 12 }}>Delete</button>
         </div>
       </div>
+
+      {/* Steps */}
       <pre style={{ fontSize: 12, whiteSpace: 'pre-wrap', color: '#334155', lineHeight: 1.6, margin: 0 }}>{solution.steps}</pre>
       {solution.references && (
-        <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 6 }}>Ref: {solution.references}</p>
+        <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 6, marginBottom: 0 }}>Ref: {solution.references}</p>
       )}
+
+      {/* Feedback row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12, paddingTop: 10, borderTop: '1px solid #f1f5f9' }}>
+        {feedbackGiven ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+            <span style={{ color: feedbackGiven === 'worked' ? '#16a34a' : '#b91c1c', fontWeight: 600 }}>
+              {feedbackGiven === 'worked' ? '✓ Marked as worked' : '✗ Marked as not worked'}
+            </span>
+            {feedbackResult && (
+              <span style={{ color: '#94a3b8' }}>
+                · {feedbackResult.workedCount} worked, {feedbackResult.failedCount} failed
+              </span>
+            )}
+            {needsReview && (
+              <span style={{ color: '#b91c1c', fontSize: 11 }}>— flagged for review</span>
+            )}
+          </div>
+        ) : (
+          <>
+            <span style={{ fontSize: 11, color: '#94a3b8' }}>Did this work?</span>
+            <button
+              onClick={() => handleFeedback(true)}
+              disabled={feedbackLoading}
+              style={{ padding: '3px 10px', borderRadius: 5, border: '1px solid #86efac', background: '#f0fdf4', color: '#16a34a', cursor: 'pointer', fontSize: 12, fontWeight: 600, opacity: feedbackLoading ? 0.5 : 1 }}
+            >
+              ✓ Worked
+            </button>
+            <button
+              onClick={() => handleFeedback(false)}
+              disabled={feedbackLoading}
+              style={{ padding: '3px 10px', borderRadius: 5, border: '1px solid #fca5a5', background: '#fef2f2', color: '#dc2626', cursor: 'pointer', fontSize: 12, fontWeight: 600, opacity: feedbackLoading ? 0.5 : 1 }}
+            >
+              ✗ Didn't work
+            </button>
+          </>
+        )}
+      </div>
     </div>
   );
 }

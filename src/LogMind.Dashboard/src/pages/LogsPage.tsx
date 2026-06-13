@@ -14,6 +14,7 @@ interface Panel {
   chatInput: string;
   chatLoading: boolean;
   minimized: boolean;
+  explanationFeedback: 'helpful' | 'not-helpful' | null;
 }
 
 const LEVEL_BADGE: Record<string, string> = {
@@ -174,7 +175,7 @@ export default function LogsPage() {
     // On mobile, minimize all existing panels before opening new one
     setPanels(prev => [
       ...(isMobile ? prev.map(p => ({ ...p, minimized: true })) : prev),
-      { key, entry, explanation: null, chatHistory: [], chatInput: '', chatLoading: false, minimized: false },
+      { key, entry, explanation: null, chatHistory: [], chatInput: '', chatLoading: false, minimized: false, explanationFeedback: null },
     ]);
     logsApi.explain(entry.id)
       .then(res => updatePanel(key, { explanation: res.explanation }))
@@ -476,6 +477,10 @@ export default function LogsPage() {
               onClose={() => closePanel(panel.key)}
               onInputChange={v => updatePanel(panel.key, { chatInput: v })}
               onSend={() => sendChat(panel)}
+              onFeedback={async helpful => {
+                await logsApi.explanationFeedback(panel.entry.id, helpful);
+                updatePanel(panel.key, { explanationFeedback: helpful ? 'helpful' : 'not-helpful' });
+              }}
             />
           ))}
         </div>
@@ -495,6 +500,10 @@ export default function LogsPage() {
               onClose={() => closePanel(panel.key)}
               onInputChange={v => updatePanel(panel.key, { chatInput: v })}
               onSend={() => sendChat(panel)}
+              onFeedback={async helpful => {
+                await logsApi.explanationFeedback(panel.entry.id, helpful);
+                updatePanel(panel.key, { explanationFeedback: helpful ? 'helpful' : 'not-helpful' });
+              }}
             />
           ))}
         </div>
@@ -514,9 +523,10 @@ interface ChatPanelProps {
   onClose: () => void;
   onInputChange: (v: string) => void;
   onSend: () => void;
+  onFeedback: (helpful: boolean) => void;
 }
 
-function ChatPanel({ panel, isMobile, onMinimize, onClose, onInputChange, onSend }: ChatPanelProps) {
+function ChatPanel({ panel, isMobile, onMinimize, onClose, onInputChange, onSend, onFeedback }: ChatPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const { entry, explanation, chatHistory, chatInput, chatLoading, minimized } = panel;
 
@@ -605,7 +615,31 @@ function ChatPanel({ panel, isMobile, onMinimize, onClose, onInputChange, onSend
             {explanation === null ? (
               <div style={{ fontSize: 12, color: '#94a3b8', textAlign: 'center', padding: 12 }}>Analysing...</div>
             ) : (
-              <AnalysisCard text={explanation} compact />
+              <>
+                <AnalysisCard text={explanation} compact />
+                {/* Explanation feedback row */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 2px' }}>
+                  {panel.explanationFeedback ? (
+                    <span style={{ fontSize: 11, color: panel.explanationFeedback === 'helpful' ? '#16a34a' : '#b91c1c', fontWeight: 600 }}>
+                      {panel.explanationFeedback === 'helpful'
+                        ? '✓ Glad it helped!'
+                        : '✗ Got it — will regenerate next time'}
+                    </span>
+                  ) : (
+                    <>
+                      <span style={{ fontSize: 11, color: '#94a3b8' }}>Helpful?</span>
+                      <button
+                        onClick={() => onFeedback(true)}
+                        style={{ padding: '2px 8px', borderRadius: 4, border: '1px solid #86efac', background: '#f0fdf4', color: '#16a34a', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}
+                      >✓</button>
+                      <button
+                        onClick={() => onFeedback(false)}
+                        style={{ padding: '2px 8px', borderRadius: 4, border: '1px solid #fca5a5', background: '#fef2f2', color: '#dc2626', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}
+                      >✗</button>
+                    </>
+                  )}
+                </div>
+              </>
             )}
 
             {/* Chat messages */}
