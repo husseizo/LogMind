@@ -349,5 +349,212 @@ Recommended improvements:
 
             await db.SaveChangesAsync();
         }
+
+        // ── Molaslubes Neon entry ─────────────────────────────────────────────
+        const string neonTitle = "MolasLubes Core Integration and Neon Synchronization Architecture";
+
+        var neonExists = await db.OperationalKnowledge
+            .AnyAsync(k => k.Title == neonTitle);
+
+        if (!neonExists)
+        {
+            db.OperationalKnowledge.Add(new OperationalKnowledge
+            {
+                Title    = neonTitle,
+                Category = "System Architecture / Operational Knowledge",
+                System   = "MolasLubes Neon",
+                Tags     = "MolasLubes,Neon,SAP,SQLServer,NeonPostgreSQL,Odoo,Quartz,Products,Customers,SalesOrders,Deliveries,Invoices,Payments,LiquiMoly,AutoHub,Cache,Sync,DeltaSync,SapDiApi,NeonSync,OdooPush",
+
+                // Applicable to Molaslubes Neon ONLY.
+                ApplicableSources = """["Molaslubes Neon"]""",
+
+                Content = """
+Scope:
+This operational knowledge applies only to logs from:
+- Molaslubes Neon
+
+---
+
+MolasLubes Neon is the central integration layer connecting SAP Business One, SQL Server cache databases, Neon PostgreSQL databases, Odoo integrations, Liqui Moly workflows, AutoHub catalog flows, admin web applications, and supervisor mobile applications.
+
+SAP Business One is the system of record.
+
+Core ERP entities originate from SAP:
+- Products
+- Customers
+- Sales Orders
+- Deliveries
+- Invoices
+- Payments
+
+Primary synchronization chain:
+SAP Business One → SQL Server Cache → Neon PostgreSQL → Odoo / Admin Web / Mobile Apps
+
+---
+
+SAP → Cache Layer
+
+SAP data is read through SAP Business One DI API.
+
+Major SAP readers:
+- SapProductReader
+- SapCustomerReader
+- SapSalesOrderReader
+- SapDeliveryReader
+- SapInvoiceReader
+- SapPaymentReader
+
+Data is written into SQL Server cache databases through:
+- ProductCacheService
+- CustomerCacheService
+- DeliveryCacheService
+- SalesOrderCacheService
+- InvoiceCacheService
+- PaymentCacheService
+
+Purpose: Reduce SAP load, avoid direct SAP reads for every request, provide local operational read models.
+
+---
+
+Cache → Neon Layer
+
+SQL Server cache data is synchronized into Neon PostgreSQL.
+
+Major Neon synchronization services:
+- NeonCustomerSyncService
+- NeonDeliverySyncService
+- NeonInvoiceSyncService
+- NeonPaymentSyncService
+- NeonSalesOrderSyncService
+- NeonSalesOrderLineSyncService
+- ProductNeonSyncService
+- PriceListNeonSyncService
+
+Purpose: Create cloud-accessible operational datasets, support downstream applications, improve integration reliability.
+
+---
+
+Neon → Odoo Layer
+
+Final outbound synchronization:
+- OdooDeliveryPushService
+- OdooInvoicePushService
+- OdooPaymentPushService
+
+Purpose: Keep Odoo synchronized with SAP transactions, push operational ERP events into Odoo.
+
+---
+
+Quartz Job Driven Architecture
+
+Most synchronization is asynchronous and driven by Quartz jobs, not user requests.
+
+SAP → Cache jobs:
+- ProductFullSyncJob
+- CustomerDeltaSyncJob
+- SalesOrderSyncJob
+- SapOpenOrdersSyncJob
+- DeliveryDeltaSyncJob
+- InvoiceSyncJob
+- PaymentSyncJob
+
+Cache → Neon jobs:
+- NeonCustomerSyncJob
+- NeonDeliverySyncJob
+- NeonInvoiceSyncJob
+- NeonPaymentSyncJob
+- NeonProductDeltaSyncJob
+- NeonSalesOrderSyncJob
+- NeonSalesOrderLineSyncJob
+- NeonPriceListSyncJob
+
+Neon → Odoo jobs:
+- OdooDeliveryPushJob
+- OdooInvoicePushJob
+- OdooPaymentPushJob
+
+---
+
+Common Failure Categories
+
+SAP Read Failures:
+Symptoms: Missing products, customers, invoices, payments.
+Causes: SAP DI API unavailable, SAP session failure, SAP connectivity issues.
+
+Cache Sync Failures:
+Symptoms: Cache data stale, missing records, delayed updates.
+Causes: Failed Quartz jobs, SQL Server connectivity issues, long-running sync jobs.
+
+Neon Sync Failures:
+Symptoms: Neon data missing, Odoo receives outdated information.
+Causes: Neon PostgreSQL connectivity issues, failed Neon sync jobs, entity mapping failures.
+
+Odoo Push Failures:
+Symptoms: Odoo missing deliveries, invoices, payments.
+Causes: Odoo API unavailable, failed outbound push jobs, invalid payload mappings.
+
+Quartz Scheduling Problems:
+Symptoms: Delayed synchronization, backlog growth, data freshness issues.
+Causes: Long-running jobs, job overlap, resource contention, database locking, scheduler delays.
+
+---
+
+Liqui Moly Operational Area
+
+Liqui Moly functionality depends on:
+- LiquiMolyProductScraperService
+- LiquiMolyCacheSyncService
+- LiquiMolyNeonSyncService
+- LiquiMolyTransferService
+- LiquiMolyReplenishmentService
+
+When Liqui Moly issues occur, check: catalog scrape jobs, cache synchronization, Neon synchronization, transfer workflows, replenishment workflows, APNS notifications.
+
+---
+
+Business Impact Analysis
+
+SAP Failure → Entire synchronization chain affected.
+Cache Failure → Neon receives stale data.
+Neon Failure → Odoo/Admin/Mobile receive stale data.
+Odoo Push Failure → ERP transactions not reflected in Odoo.
+Quartz Failure → Synchronization delays accumulate across all systems.
+
+---
+
+Troubleshooting Rule
+
+When analyzing Molaslubes Neon logs, always determine:
+
+1. Which synchronization stage failed.
+2. Whether the failure is upstream or downstream.
+3. Which Quartz job was responsible.
+4. Whether cache freshness was compromised.
+5. Whether Neon replication completed.
+6. Whether Odoo push completed.
+7. Whether SAP remained healthy.
+
+Never assume Odoo is the root cause until SAP → Cache → Neon synchronization has been verified.
+
+---
+
+Operational Priority when diagnosing incidents:
+
+1. SAP Health
+2. Cache Health
+3. Quartz Scheduler Health
+4. Neon Synchronization Health
+5. Odoo Push Health
+6. Frontend Consumption Health
+
+Most incidents originate from synchronization delays rather than business logic failures.
+""",
+                IsActive  = true,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            });
+
+            await db.SaveChangesAsync();
+        }
     }
 }
