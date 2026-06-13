@@ -173,5 +173,13 @@ public class LogParserService : BackgroundService
         return entries;
     }
 
-    private static DateTime ParseOrNow(string? s) => DateTime.TryParse(s, out var d) ? d : DateTime.UtcNow;
+    private static DateTime ParseOrNow(string? s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return DateTime.UtcNow;
+        if (DateTimeOffset.TryParse(s, out var dto)) return dto.UtcDateTime;
+        if (DateTime.TryParse(s, null,
+                System.Globalization.DateTimeStyles.AssumeUniversal |
+                System.Globalization.DateTimeStyles.AdjustToUniversal, out var dt)) return dt;
+        return DateTime.UtcNow;
+    }
 }

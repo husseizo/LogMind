@@ -47,6 +47,9 @@ public class IncidentCorrelationService : BackgroundService
         await Task.Delay(TimeSpan.FromSeconds(StartupDelaySecs), stoppingToken);
         _logger.LogInformation("IncidentCorrelationService started.");
 
+        try { await RunBootstrapAsync(stoppingToken); }
+        catch (Exception ex) { _logger.LogError(ex, "Bootstrap scan failed — real-time correlation will continue normally"); }
+
         while (!stoppingToken.IsCancellationRequested)
         {
             try
@@ -60,6 +63,88 @@ public class IncidentCorrelationService : BackgroundService
 
             await Task.Delay(TimeSpan.FromSeconds(ScanIntervalSecs), stoppingToken);
         }
+    }
+
+    // ── One-time historical bootstrap ──────────────────────────────────────────
+
+    private const int BootstrapDays    = 7;
+    private const int BootstrapMaxLogs = 10_000;
+
+    private async Task RunBootstrapAsync(CancellationToken stoppingToken)
+    {
+        using var scope      = _scopeFactory.CreateScope();
+        var db               = scope.ServiceProvider.GetRequiredService<LogMindDbContext>();
+        var incidentRepo     = scope.ServiceProvider.GetRequiredService<IIncidentRepository>();
+
+        // Idempotency: skip if any incidents already exist
+        if (await db.Incidents.AnyAsync(stoppingToken))
+        {
+            _logger.LogDebug("Bootstrap skipped — incidents already exist");
+            return;
+        }
+
+        var since = DateTime.UtcNow.AddDays(-BootstrapDays);
+        var historicalLogs = await db.LogEntries
+            .Where(l => l.Timestamp >= since && (l.Level == "ERROR" || l.Level == "FATAL"))
+            .OrderBy(l => l.Timestamp)
+            .Take(BootstrapMaxLogs)
+            .ToListAsync(stoppingToken);
+
+        if (historicalLogs.Count == 0)
+        {
+            _logger.LogInformation("Bootstrap: no ERROR/FATAL logs found in last {Days} days — skipping", BootstrapDays);
+            return;
+        }
+
+        _logger.LogInformation("Bootstrap: processing {Count} historical logs (last {Days} days, up to {Max})",
+            historicalLogs.Count, BootstrapDays, BootstrapMaxLogs);
+
+        var deps = await db.OperationalDependencies
+            .Where(d => d.IsActive)
+            .ToListAsync(stoppingToken);
+
+        var candidates = new List<Incident>();
+        int created = 0, joined = 0;
+
+        foreach (var log in historicalLogs)
+        {
+            if (stoppingToken.IsCancellationRequested) break;
+
+            // Prune candidates whose window has passed for this log — keeps the list small
+            candidates.RemoveAll(c => (log.Timestamp - c.LastSeenAt).TotalMinutes > WindowMinutes + 1);
+
+            var (bestIncident, bestScore, bestBasis) = FindBestCandidate(log, candidates, deps);
+
+            if (bestIncident is not null && bestScore >= Threshold)
+            {
+                await EnrollInIncidentAsync(log, bestIncident, bestScore, bestBasis, incidentRepo);
+                joined++;
+            }
+            else
+            {
+                var newIncident = await CreateIncidentAsync(log, incidentRepo);
+                candidates.Add(newIncident);
+                created++;
+            }
+        }
+
+        // Auto-resolve: relative to the last log's timestamp, not UtcNow
+        var lastTs         = historicalLogs.Max(l => l.Timestamp);
+        var staleThreshold = lastTs.AddMinutes(-AutoResolveMinutes);
+        var stale          = candidates
+            .Where(c => c.Status == "Open" && c.LastSeenAt < staleThreshold)
+            .ToList();
+
+        foreach (var incident in stale)
+        {
+            incident.Status     = "Resolved";
+            incident.ResolvedAt = incident.LastSeenAt.AddMinutes(AutoResolveMinutes);
+            await incidentRepo.UpdateAsync(incident);
+        }
+
+        _logger.LogInformation(
+            "Bootstrap complete — {Created} incidents created, {Joined} events joined, {Resolved} auto-resolved",
+            created, joined, stale.Count);
     }
 
     // ── Main cycle ─────────────────────────────────────────────────────────────

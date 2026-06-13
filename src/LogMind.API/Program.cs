@@ -76,6 +76,7 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<LogMindDbContext>();
     db.Database.Migrate();
+    await TimestampNormalizer.NormalizeAsync(db, app.Logger);
     await OperationalKnowledgeSeeder.SeedAsync(db);
     await OperationalDependencySeeder.SeedAsync(db);
 }

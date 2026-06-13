@@ -82,9 +82,15 @@ public static class LogFileParser
             DateTime ts = DateTime.UtcNow;
             string lvl = "INFO", msg = line;
 
-            if (parts.Length >= 3 && DateTime.TryParse(parts[0].Trim('"'), out var parsed))
+            if (parts.Length >= 3)
             {
-                ts = parsed;
+                var tsRaw = parts[0].Trim('"');
+                if (DateTimeOffset.TryParse(tsRaw, out var dto))
+                    ts = dto.UtcDateTime;
+                else if (DateTime.TryParse(tsRaw, null,
+                             System.Globalization.DateTimeStyles.AssumeUniversal |
+                             System.Globalization.DateTimeStyles.AdjustToUniversal, out var dt))
+                    ts = dt;
                 lvl = NormalizeLevel(parts[1].Trim('"', ' '));
                 msg = parts[2].Trim('"');
             }
@@ -108,7 +114,12 @@ public static class LogFileParser
             // Normalize comma-separated milliseconds (e.g. Python logging "12:34:56,789" → "12:34:56.789")
             var tsRaw = match.Groups["timestamp"].Value;
             var tsNorm = System.Text.RegularExpressions.Regex.Replace(tsRaw, @"(\d{2}:\d{2}:\d{2}),(\d+)", "$1.$2");
-            if (!DateTime.TryParse(tsNorm, null, System.Globalization.DateTimeStyles.RoundtripKind, out timestamp)) continue;
+            if (DateTimeOffset.TryParse(tsNorm, null, System.Globalization.DateTimeStyles.None, out var dto))
+                timestamp = dto.UtcDateTime;
+            else if (!DateTime.TryParse(tsNorm, null,
+                         System.Globalization.DateTimeStyles.AssumeUniversal |
+                         System.Globalization.DateTimeStyles.AdjustToUniversal, out timestamp))
+                continue;
             level = match.Groups["level"].Value;
             message = match.Groups["message"].Value;
             return true;
