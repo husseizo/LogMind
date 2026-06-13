@@ -48,6 +48,12 @@ public class OllamaEmbeddingService : IEmbeddingService
             _logger.LogWarning(ex, "Ollama embedding endpoint unavailable — falling back to keyword search");
             return [];
         }
+        catch (TaskCanceledException ex)
+        {
+            _available = false;
+            _logger.LogWarning(ex, "Ollama embedding timed out — falling back to keyword search");
+            return [];
+        }
     }
 
     private sealed class EmbedRequest

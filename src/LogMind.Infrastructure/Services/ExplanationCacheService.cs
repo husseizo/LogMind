@@ -60,6 +60,19 @@ public class ExplanationCacheService
     /// </summary>
     public async Task<string> GetOrExplainAsync(LogEntry entry)
     {
+        try
+        {
+            return await GetOrExplainCoreAsync(entry);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Cache cascade failed for entry {Id} — falling back to direct Ollama call", entry.Id);
+            return await _ollama.ExplainErrorAsync(entry);
+        }
+    }
+
+    private async Task<string> GetOrExplainCoreAsync(LogEntry entry)
+    {
         var normalized = MessageNormalizer.Normalize(entry.Message);
         var hash = MessageNormalizer.ComputeHash(entry.Source, normalized);
 
@@ -101,7 +114,6 @@ public class ExplanationCacheService
             }
             catch (Exception ex)
             {
-                // Embedding failure must not prevent explanation — log and fall through to Ollama
                 _logger.LogWarning(ex, "Embedding service failed during Tier3 lookup; skipping to Ollama");
                 queryVector = null;
             }
@@ -111,28 +123,35 @@ public class ExplanationCacheService
         _logger.LogDebug("Cache miss — calling Ollama for {Source}/{Level}", entry.Source, entry.Level);
         var explanation = await _ollama.ExplainErrorAsync(entry);
 
-        // Never cache an offline/error stub — those are transient, not valid explanations
         if (!IsOllamaStub(explanation))
         {
             var vectorJson = queryVector is not null
                 ? JsonSerializer.Serialize(queryVector)
                 : null;
 
-            await _cache.UpsertAsync(new AiExplanationCache
+            try
             {
-                LogEntryId       = entry.Id,
-                MessageHash      = hash,
-                NormalizedMessage = normalized,
-                Source           = entry.Source,
-                Level            = entry.Level,
-                Model            = _settings.Model,
-                PromptVersion    = CurrentPromptVersion,
-                ExplanationJson  = explanation,
-                EmbeddingVector  = vectorJson,
-                HitCount         = 0,
-                LastUsedAt       = DateTime.UtcNow,
-                CreatedAt        = DateTime.UtcNow,
-            });
+                await _cache.UpsertAsync(new AiExplanationCache
+                {
+                    LogEntryId        = entry.Id,
+                    MessageHash       = hash,
+                    NormalizedMessage = normalized,
+                    Source            = entry.Source,
+                    Level             = entry.Level,
+                    Model             = _settings.Model,
+                    PromptVersion     = CurrentPromptVersion,
+                    ExplanationJson   = explanation,
+                    EmbeddingVector   = vectorJson,
+                    HitCount          = 0,
+                    LastUsedAt        = DateTime.UtcNow,
+                    CreatedAt         = DateTime.UtcNow,
+                });
+            }
+            catch (Exception ex)
+            {
+                // Cache write failure must not prevent returning the explanation
+                _logger.LogWarning(ex, "Failed to write explanation to cache for {Source}/{Level}", entry.Source, entry.Level);
+            }
         }
 
         return explanation;
