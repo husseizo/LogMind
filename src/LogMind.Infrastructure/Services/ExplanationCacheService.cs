@@ -28,6 +28,7 @@ public class ExplanationCacheService
     private readonly ISearchService _search;
     private readonly IOperationalKnowledgeRepository _opKnowledge;
     private readonly IOperationalDependencyRepository _deps;
+    private readonly IIncidentRepository _incidents;
     private readonly OllamaSettings _settings;
     private readonly ILogger<ExplanationCacheService> _logger;
 
@@ -38,6 +39,7 @@ public class ExplanationCacheService
         ISearchService search,
         IOperationalKnowledgeRepository opKnowledge,
         IOperationalDependencyRepository deps,
+        IIncidentRepository incidents,
         OllamaSettings settings,
         ILogger<ExplanationCacheService> logger)
     {
@@ -47,6 +49,7 @@ public class ExplanationCacheService
         _search      = search;
         _opKnowledge = opKnowledge;
         _deps        = deps;
+        _incidents   = incidents;
         _settings    = settings;
         _logger      = logger;
     }
@@ -132,8 +135,9 @@ public class ExplanationCacheService
         // ── Full miss: retrieve RAG context then call Ollama ─────────────────
         _logger.LogDebug("Cache miss — building RAG context for {Source}/{Level}", entry.Source, entry.Level);
         var context = await BuildExplainContextAsync(entry, candidates, queryVector);
-        _logger.LogDebug("RAG context: {Issues} known issues, {Logs} similar logs, {Prev} prev explanations, {Ok} op-knowledge docs",
-            context.SimilarIssues.Count, context.SimilarLogs.Count, context.PreviousExplanations.Count, context.OperationalKnowledge.Count);
+        _logger.LogDebug("RAG context: {Issues} known issues, {Logs} similar logs, {Prev} prev explanations, {Ok} op-knowledge docs, incident={Incident}",
+            context.SimilarIssues.Count, context.SimilarLogs.Count, context.PreviousExplanations.Count, context.OperationalKnowledge.Count,
+            context.RelatedIncident is not null ? $"#{context.RelatedIncident.Id} ({context.RelatedIncident.Status})" : "none");
         var explanation = await _ollama.ExplainErrorAsync(entry, context);
 
         if (!IsOllamaStub(explanation))
@@ -183,8 +187,9 @@ public class ExplanationCacheService
             var logsTask     = _search.SearchLogsAsync(entry.Message, entry.Source);
             var opKnowTask   = _opKnowledge.FindRelevantAsync(entry.Source, queryVector, topK: 3);
             var depsTask     = _deps.FindDownstreamAsync(entry.Source);
+            var incidentTask = _incidents.FindByLogEntryAsync(entry.Id);
 
-            await Task.WhenAll(issuesTask, logsTask, opKnowTask, depsTask);
+            await Task.WhenAll(issuesTask, logsTask, opKnowTask, depsTask, incidentTask);
 
             var issues = (await issuesTask).ToList();
 
@@ -202,8 +207,9 @@ public class ExplanationCacheService
 
             var opKnowledge = await opKnowTask;
             var downstream  = await depsTask;
+            var incident    = await incidentTask;
 
-            return new ExplainContext(issues, similarLogs, prevExplanations, opKnowledge, downstream);
+            return new ExplainContext(issues, similarLogs, prevExplanations, opKnowledge, downstream, incident);
         }
         catch (Exception ex)
         {

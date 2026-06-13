@@ -19,12 +19,17 @@ public class IncidentRepository : IIncidentRepository
 
     public async Task<Incident?> FindByLogEntryAsync(int logEntryId)
     {
-        var evt = await _db.IncidentEvents
+        var incidentId = await _db.IncidentEvents
             .Where(e => e.LogEntryId == logEntryId)
-            .Include(e => e.Incident)
+            .Select(e => (int?)e.IncidentId)
             .FirstOrDefaultAsync();
 
-        return evt?.Incident;
+        if (incidentId is null) return null;
+
+        return await _db.Incidents
+            .Include(i => i.Events.OrderBy(e => e.Sequence))
+                .ThenInclude(e => e.LogEntry)
+            .FirstOrDefaultAsync(i => i.Id == incidentId.Value);
     }
 
     public async Task<Incident> CreateAsync(Incident incident)

@@ -108,12 +108,51 @@ public class OllamaAiExplanationService : IAiExplanationService
         var hasContent = ctx.SimilarIssues.Count > 0
                       || ctx.SimilarLogs.Count > 0
                       || ctx.PreviousExplanations.Count > 0
-                      || ctx.DownstreamDependencies.Count > 0;
+                      || ctx.DownstreamDependencies.Count > 0
+                      || ctx.RelatedIncident is not null;
 
         if (!hasContent)
         {
             sb.AppendLine("No relevant context retrieved from the LogMind knowledge base.");
             return sb.ToString();
+        }
+
+        if (ctx.RelatedIncident is { } incident)
+        {
+            sb.AppendLine("INCIDENT CONTEXT (this log is part of an active correlated incident chain):");
+            sb.AppendLine($"  Incident: \"{incident.Title}\"");
+            sb.AppendLine($"  Fingerprint: {incident.IncidentFingerprint}");
+            sb.AppendLine($"  Status: {incident.Status} | Severity: {incident.Severity} | Source: {incident.SourceSystem}");
+            sb.AppendLine($"  First seen: {incident.FirstSeenAt:u}  |  Event count: {incident.EventCount}");
+            sb.AppendLine();
+
+            // Root event + top 3 correlated by score (capped at 4 total), ordered by timeline
+            var rootEvent = incident.Events.FirstOrDefault(e => e.Role == "RootCause");
+            var topCorrelated = incident.Events
+                .Where(e => e.Role != "RootCause" && e.LogEntry is not null)
+                .OrderByDescending(e => e.CorrelationScore)
+                .Take(3)
+                .ToList();
+
+            var timeline = new List<IncidentEvent>();
+            if (rootEvent is not null) timeline.Add(rootEvent);
+            timeline.AddRange(topCorrelated);
+            timeline = timeline.OrderBy(e => e.MinutesFromRoot).ToList();
+
+            sb.AppendLine("  Event chain (root + top 3 correlated, ordered by timeline):");
+            foreach (var evt in timeline)
+            {
+                var log     = evt.LogEntry;
+                var msgSnip = log is not null ? Truncate(log.Message.Split('\n')[0], 140) : "(log not loaded)";
+                var level   = log?.Level ?? "?";
+                var role    = evt.Role.PadRight(16);
+                sb.AppendLine($"    T+{evt.MinutesFromRoot,2}m  [{role} | score={evt.CorrelationScore:F0}]  [{level}] {msgSnip}");
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("  Do NOT treat this as an isolated log entry. Trace the root cause across the full event chain above.");
+            sb.AppendLine("  In Root Cause and Recommended Solution sections, reference the incident timeline explicitly.");
+            sb.AppendLine();
         }
 
         if (ctx.SimilarIssues.Count > 0)

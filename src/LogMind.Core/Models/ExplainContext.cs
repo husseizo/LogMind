@@ -9,8 +9,9 @@ public record ExplainContext(
     IReadOnlyList<LogEntry> SimilarLogs,
     IReadOnlyList<AiExplanationCache> PreviousExplanations,
     IReadOnlyList<OperationalKnowledge> OperationalKnowledge,
-    IReadOnlyList<OperationalDependency> DownstreamDependencies
+    IReadOnlyList<OperationalDependency> DownstreamDependencies,
+    Incident? RelatedIncident
 )
 {
-    public static readonly ExplainContext Empty = new([], [], [], [], []);
+    public static readonly ExplainContext Empty = new([], [], [], [], [], null);
 }
