@@ -28,36 +28,135 @@ public class OllamaAiExplanationService : IAiExplanationService
 
     // ── Public interface ────────────────────────────────────────────────────
 
-    public Task<string> ExplainErrorAsync(LogEntry logEntry)
+    public Task<string> ExplainErrorAsync(LogEntry logEntry, ExplainContext? context = null)
     {
-        var isError = logEntry.Level is "ERROR" or "FATAL";
-        var prompt = $"""
-            You are a senior infrastructure engineer debugging a production system.
-            Analyse this log entry and respond using EXACTLY this format — no deviation:
+        var ctx = context ?? ExplainContext.Empty;
+        var retrievedBlock = BuildRetrievedContextBlock(ctx);
 
-            **What happened:** (one sentence — the specific event or failure)
-            **Component affected:** (exact class, service, module, or function extracted from the message or stack trace — never say "unknown")
-            **Root cause:** (the most likely technical reason this occurred, be specific)
-            **Fix steps:**
+        var prompt = $"""
+            You are LogMind AI — a senior software architect, operations engineer, systems analyst, and troubleshooting specialist embedded inside the LogMind platform.
+
+            This environment runs: SAP Business One middleware, Odoo 19 integrations, ASP.NET Core 8 APIs, Python services, SQLite, Windows Server 2022, and background sync workers.
+
+            Your purpose: diagnose failures accurately using the current log entry AND the retrieved operational context below. Always prioritize: (1) stack trace evidence, (2) exception message, (3) known issues, (4) solutions with positive feedback history.
+
+            ── RETRIEVED OPERATIONAL CONTEXT ──────────────────────────────────────
+            {retrievedBlock}
+            ───────────────────────────────────────────────────────────────────────
+
+            ── CURRENT LOG ENTRY ──────────────────────────────────────────────────
+            Source  : {logEntry.Source}
+            Level   : {logEntry.Level}
+            Time    : {logEntry.Timestamp:u}
+            Message : {logEntry.Message}
+            {(logEntry.StackTrace is not null ? $"Stack trace:\n{logEntry.StackTrace}" : "")}
+            ───────────────────────────────────────────────────────────────────────
+
+            Respond using EXACTLY these section headers — no extras, no omissions:
+
+            ## What Happened
+            One paragraph describing the specific event or failure in plain English.
+
+            ## Affected Component
+            Identify the service, class, module, background worker, or API endpoint — extracted directly from the log.
+
+            ## Retrieved Context Used
+            State which of these you used: Known Issues | Previous Solutions | Similar historical logs | Feedback history. If none available: "No relevant retrieved context."
+
+            ## Root Cause
+            The most probable technical reason. If uncertain, state your assumptions explicitly.
+
+            ## Recommended Solution
+            Rank solutions by: (1) worked feedback history, (2) safety, (3) simplicity. If a Known Issue matches, reference it by title.
+
+            ## Immediate Fix
             1. (concrete action)
             2. (concrete action)
             3. (add more if needed)
-            **What NOT to change:** (existing logic or infrastructure to preserve while fixing)
 
-            Log entry:
-            Source : {logEntry.Source}
-            Level  : {logEntry.Level}
-            Time   : {logEntry.Timestamp:u}
-            Message: {logEntry.Message}
-            {(logEntry.StackTrace is not null ? $"Stack trace:\n{logEntry.StackTrace}" : "")}
+            ## Validation Steps
+            How to confirm the fix worked and the system is healthy again.
 
-            {(isError
-                ? "This is an ERROR/FATAL — be precise about what broke and how to fix it safely."
-                : "This is informational — focus on what the event means and whether any action is needed.")}
+            ## Prevention
+            How to prevent this category of failure from recurring.
+
+            ## Future Improvement
+            One or two targeted recommendations for: code, architecture, monitoring, logging, retry, indexing, or alerting.
+
+            ## Business / System Impact
+            Impact on orders, invoices, customers, inventory, sync jobs, or reporting — if relevant. If none, say "No direct business impact."
+
+            ## Confidence
+            High / Medium / Low — and one sentence explaining why.
             """;
 
         return OllamaChatAsync([new OllamaMessage { Role = "user", Content = prompt }]);
     }
+
+    private static string BuildRetrievedContextBlock(ExplainContext ctx)
+    {
+        var sb = new System.Text.StringBuilder();
+
+        if (ctx.SimilarIssues.Count == 0 && ctx.SimilarLogs.Count == 0)
+        {
+            sb.AppendLine("No relevant context retrieved from the LogMind knowledge base.");
+            return sb.ToString();
+        }
+
+        if (ctx.SimilarIssues.Count > 0)
+        {
+            sb.AppendLine("SIMILAR KNOWN ISSUES:");
+            foreach (var issue in ctx.SimilarIssues.Take(3))
+            {
+                sb.AppendLine($"  Issue: \"{issue.Title}\" (Source: {issue.Source})");
+                sb.AppendLine($"  Pattern: {issue.ErrorPattern}");
+                if (!string.IsNullOrWhiteSpace(issue.Description))
+                    sb.AppendLine($"  Description: {Truncate(issue.Description, 200)}");
+
+                var solutions = issue.Solutions.OrderByDescending(s => s.Upvotes).Take(3).ToList();
+                if (solutions.Count > 0)
+                {
+                    sb.AppendLine("  Solutions (ranked by upvotes):");
+                    foreach (var sol in solutions)
+                    {
+                        var workedCount = sol.Feedback.Count(f => f.Worked);
+                        var failedCount = sol.Feedback.Count(f => !f.Worked);
+                        var feedbackTag = sol.Feedback.Count > 0
+                            ? $" | ✓ {workedCount} worked, ✗ {failedCount} failed"
+                            : "";
+                        var reviewTag = sol.NeedsReview ? " [⚠ NEEDS REVIEW]" : "";
+                        sb.AppendLine($"    [{sol.Upvotes} upvotes{feedbackTag}{reviewTag}] \"{sol.Title}\"");
+                        sb.AppendLine($"      Steps: {Truncate(sol.Steps, 200)}");
+                        if (!string.IsNullOrWhiteSpace(sol.References))
+                            sb.AppendLine($"      Ref: {sol.References}");
+                    }
+                }
+                else
+                {
+                    sb.AppendLine("  Solutions: none recorded yet.");
+                }
+                sb.AppendLine();
+            }
+        }
+
+        if (ctx.SimilarLogs.Count > 0)
+        {
+            sb.AppendLine("SIMILAR HISTORICAL LOG ENTRIES:");
+            foreach (var log in ctx.SimilarLogs.Where(l => l.Level is "ERROR" or "FATAL" or "WARN").Take(3))
+            {
+                sb.AppendLine($"  [{log.Level}] {log.Timestamp:u} | {log.Source}");
+                sb.AppendLine($"  {Truncate(log.Message, 180)}");
+                if (log.StackTrace is not null)
+                    sb.AppendLine($"  Trace: {Truncate(log.StackTrace, 120)}");
+                sb.AppendLine();
+            }
+        }
+
+        return sb.ToString().TrimEnd();
+    }
+
+    private static string Truncate(string s, int max) =>
+        s.Length <= max ? s : s[..max] + "…";
 
     public async Task<string> ChatAsync(LogEntry logEntry, IEnumerable<(string Role, string Content)> history, string question)
     {

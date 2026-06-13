@@ -86,7 +86,9 @@ public class EmbeddingSearchService : ISearchService
     private async Task<List<KnownIssue>> SemanticSearchAsync(float[] queryVec, int topK)
     {
         var embeddings = await _db.KnownIssueEmbeddings
-            .Include(e => e.KnownIssue).ThenInclude(k => k.Solutions)
+            .Include(e => e.KnownIssue)
+                .ThenInclude(k => k.Solutions)
+                    .ThenInclude(s => s.Feedback)
             .ToListAsync();
 
         return embeddings

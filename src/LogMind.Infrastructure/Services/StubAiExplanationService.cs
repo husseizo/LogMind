@@ -8,7 +8,7 @@ namespace LogMind.Infrastructure.Services;
 /// </summary>
 public class StubAiExplanationService : IAiExplanationService
 {
-    public Task<string> ExplainErrorAsync(LogEntry logEntry)
+    public Task<string> ExplainErrorAsync(LogEntry logEntry, ExplainContext? context = null)
     {
         var explanation = $"Error in [{logEntry.Source}] at {logEntry.Timestamp:u}: {logEntry.Message}. " +
                           "AI explanation not yet configured — wire up an LLM provider in IAiExplanationService.";

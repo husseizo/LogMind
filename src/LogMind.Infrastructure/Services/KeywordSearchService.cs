@@ -22,7 +22,10 @@ public class KeywordSearchService : ISearchService
             return Enumerable.Empty<KnownIssue>();
 
         var keywords = ExtractKeywords(errorMessage);
-        var issues = await _db.KnownIssues.Include(i => i.Solutions).ToListAsync();
+        var issues = await _db.KnownIssues
+            .Include(i => i.Solutions)
+                .ThenInclude(s => s.Feedback)
+            .ToListAsync();
 
         var scored = issues
             .Select(issue => new

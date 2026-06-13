@@ -2,6 +2,7 @@ using System.Text.Json;
 using LogMind.Core.Interfaces;
 using LogMind.Core.Models;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace LogMind.Infrastructure.Services;
 
@@ -24,6 +25,7 @@ public class ExplanationCacheService
     private readonly IExplanationCacheRepository _cache;
     private readonly IAiExplanationService _ollama;
     private readonly IEmbeddingService _embeddings;
+    private readonly ISearchService _search;
     private readonly OllamaSettings _settings;
     private readonly ILogger<ExplanationCacheService> _logger;
 
@@ -31,14 +33,16 @@ public class ExplanationCacheService
         IExplanationCacheRepository cache,
         IAiExplanationService ollama,
         IEmbeddingService embeddings,
+        ISearchService search,
         OllamaSettings settings,
         ILogger<ExplanationCacheService> logger)
     {
-        _cache     = cache;
-        _ollama    = ollama;
+        _cache      = cache;
+        _ollama     = ollama;
         _embeddings = embeddings;
-        _settings  = settings;
-        _logger    = logger;
+        _search     = search;
+        _settings   = settings;
+        _logger     = logger;
     }
 
     /// <summary>
@@ -119,9 +123,12 @@ public class ExplanationCacheService
             }
         }
 
-        // ── Full miss: call Ollama ────────────────────────────────────────────
-        _logger.LogDebug("Cache miss — calling Ollama for {Source}/{Level}", entry.Source, entry.Level);
-        var explanation = await _ollama.ExplainErrorAsync(entry);
+        // ── Full miss: retrieve RAG context then call Ollama ─────────────────
+        _logger.LogDebug("Cache miss — building RAG context for {Source}/{Level}", entry.Source, entry.Level);
+        var context = await BuildExplainContextAsync(entry);
+        _logger.LogDebug("RAG context: {Issues} known issues, {Logs} similar logs",
+            context.SimilarIssues.Count, context.SimilarLogs.Count);
+        var explanation = await _ollama.ExplainErrorAsync(entry, context);
 
         if (!IsOllamaStub(explanation))
         {
@@ -155,6 +162,32 @@ public class ExplanationCacheService
         }
 
         return explanation;
+    }
+
+    // ── RAG context builder ───────────────────────────────────────────────────
+
+    private async Task<ExplainContext> BuildExplainContextAsync(LogEntry entry)
+    {
+        try
+        {
+            var issuesTask = _search.FindSimilarIssuesAsync(entry.Message, topK: 3);
+            var logsTask   = _search.SearchLogsAsync(entry.Message, entry.Source);
+
+            await Task.WhenAll(issuesTask, logsTask);
+
+            var issues = (await issuesTask).ToList();
+            var similarLogs = (await logsTask)
+                .Where(l => l.Id != entry.Id && l.Level is "ERROR" or "FATAL" or "WARN")
+                .Take(3)
+                .ToList();
+
+            return new ExplainContext(issues, similarLogs);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "RAG context retrieval failed — proceeding with empty context");
+            return ExplainContext.Empty;
+        }
     }
 
     // ── Tier 2 helper ─────────────────────────────────────────────────────────
