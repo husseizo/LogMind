@@ -10,4 +10,7 @@ public class KnownIssue
     public ICollection<Solution> Solutions { get; set; } = new List<Solution>();
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+
+    // Updated each time a matching log entry is explained — used for recency sorting
+    public DateTime? LastOccurredAt { get; set; }
 }

@@ -12,11 +12,13 @@ public class SolutionsController : ControllerBase
 {
     private readonly LogMindDbContext _db;
     private readonly EmbeddingSearchService _embedding;
+    private readonly SolutionFeedbackService _feedback;
 
-    public SolutionsController(LogMindDbContext db, EmbeddingSearchService embedding)
+    public SolutionsController(LogMindDbContext db, EmbeddingSearchService embedding, SolutionFeedbackService feedback)
     {
-        _db = db;
+        _db       = db;
         _embedding = embedding;
+        _feedback  = feedback;
     }
 
     [HttpGet]
@@ -85,6 +87,31 @@ public class SolutionsController : ControllerBase
         await _db.SaveChangesAsync();
         return Ok(new { solution.Upvotes });
     }
+
+    /// <summary>
+    /// Record a worked/not-worked feedback entry for a solution.
+    /// On the third consecutive failure, Solution.NeedsReview is set and related cache entries
+    /// are invalidated so the next explain call regenerates a fresh AI explanation.
+    /// POST /api/issues/{issueId}/solutions/{id}/feedback
+    /// Body: { "worked": true/false, "logEntryId": 42, "note": "optional free text" }
+    /// </summary>
+    [HttpPost("{id:int}/feedback")]
+    public async Task<IActionResult> Feedback(int issueId, int id, [FromBody] FeedbackDto dto)
+    {
+        var exists = await _db.Solutions.AnyAsync(s => s.Id == id && s.KnownIssueId == issueId);
+        if (!exists) return NotFound();
+
+        try
+        {
+            var result = await _feedback.RecordAsync(id, dto.LogEntryId, dto.Worked, dto.Note);
+            return Ok(result);
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
+    }
 }
 
 public record SolutionDto(string Title, string Steps, string? References);
+public record FeedbackDto(bool Worked, int? LogEntryId, string? Note);

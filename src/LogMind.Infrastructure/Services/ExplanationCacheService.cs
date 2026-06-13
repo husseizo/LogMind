@@ -1,0 +1,174 @@
+using System.Text.Json;
+using LogMind.Core.Interfaces;
+using LogMind.Core.Models;
+using Microsoft.Extensions.Logging;
+
+namespace LogMind.Infrastructure.Services;
+
+/// <summary>
+/// Orchestrates the three-tier explanation cache cascade.
+/// Controllers call GetOrExplainAsync instead of IAiExplanationService.ExplainErrorAsync directly.
+/// </summary>
+public class ExplanationCacheService
+{
+    // Bump this constant whenever the Ollama prompt format changes so cached entries from
+    // old prompts can be filtered out via ExplanationCacheRepository queries.
+    public const string CurrentPromptVersion = "v1";
+
+    // Tier 2: token-Jaccard similarity threshold — must be >= this to count as a hit
+    private const float StringSimilarityThreshold = 0.90f;
+
+    // Tier 3: cosine similarity threshold — must be >= this to count as a hit
+    private const float EmbeddingSimilarityThreshold = 0.85f;
+
+    private readonly IExplanationCacheRepository _cache;
+    private readonly IAiExplanationService _ollama;
+    private readonly IEmbeddingService _embeddings;
+    private readonly OllamaSettings _settings;
+    private readonly ILogger<ExplanationCacheService> _logger;
+
+    public ExplanationCacheService(
+        IExplanationCacheRepository cache,
+        IAiExplanationService ollama,
+        IEmbeddingService embeddings,
+        OllamaSettings settings,
+        ILogger<ExplanationCacheService> logger)
+    {
+        _cache     = cache;
+        _ollama    = ollama;
+        _embeddings = embeddings;
+        _settings  = settings;
+        _logger    = logger;
+    }
+
+    /// <summary>
+    /// Returns an AI explanation for the given log entry, using the cache cascade:
+    ///   Tier 1 (exact hash) → Tier 2 (string similarity) → Tier 3 (embedding) → Ollama.
+    /// Only calls Ollama when all three tiers miss. Never writes to cache when Ollama is offline.
+    /// </summary>
+    public async Task<string> GetOrExplainAsync(LogEntry entry)
+    {
+        var normalized = MessageNormalizer.Normalize(entry.Message);
+        var hash = MessageNormalizer.ComputeHash(entry.Source, normalized);
+
+        // ── Tier 1: exact hash ────────────────────────────────────────────────
+        var hit = await _cache.FindByHashAsync(hash);
+        if (hit is not null)
+        {
+            _logger.LogDebug("Cache Tier1 hit for {Hash}", hash[..8]);
+            await _cache.IncrementHitCountAsync(hit.Id);
+            return hit.ExplanationJson;
+        }
+
+        // ── Tier 2: token-Jaccard string similarity ───────────────────────────
+        var candidates = await _cache.GetBySourceAsync(entry.Source, limit: 200);
+        var tier2Match = FindBestStringMatch(normalized, candidates);
+        if (tier2Match is not null)
+        {
+            _logger.LogDebug("Cache Tier2 hit for source={Source}", entry.Source);
+            await _cache.IncrementHitCountAsync(tier2Match.Id);
+            return tier2Match.ExplanationJson;
+        }
+
+        // ── Tier 3: embedding cosine similarity ───────────────────────────────
+        float[]? queryVector = null;
+        if (_embeddings.IsAvailable)
+        {
+            try
+            {
+                queryVector = await _embeddings.GetEmbeddingAsync(normalized);
+                var tier3Match = await _cache.FindSimilarByEmbeddingAsync(
+                    queryVector, EmbeddingSimilarityThreshold);
+
+                if (tier3Match is not null)
+                {
+                    _logger.LogDebug("Cache Tier3 hit for {Hash}", hash[..8]);
+                    await _cache.IncrementHitCountAsync(tier3Match.Id);
+                    return tier3Match.ExplanationJson;
+                }
+            }
+            catch (Exception ex)
+            {
+                // Embedding failure must not prevent explanation — log and fall through to Ollama
+                _logger.LogWarning(ex, "Embedding service failed during Tier3 lookup; skipping to Ollama");
+                queryVector = null;
+            }
+        }
+
+        // ── Full miss: call Ollama ────────────────────────────────────────────
+        _logger.LogDebug("Cache miss — calling Ollama for {Source}/{Level}", entry.Source, entry.Level);
+        var explanation = await _ollama.ExplainErrorAsync(entry);
+
+        // Never cache an offline/error stub — those are transient, not valid explanations
+        if (!IsOllamaStub(explanation))
+        {
+            var vectorJson = queryVector is not null
+                ? JsonSerializer.Serialize(queryVector)
+                : null;
+
+            await _cache.UpsertAsync(new AiExplanationCache
+            {
+                LogEntryId       = entry.Id,
+                MessageHash      = hash,
+                NormalizedMessage = normalized,
+                Source           = entry.Source,
+                Level            = entry.Level,
+                Model            = _settings.Model,
+                PromptVersion    = CurrentPromptVersion,
+                ExplanationJson  = explanation,
+                EmbeddingVector  = vectorJson,
+                HitCount         = 0,
+                LastUsedAt       = DateTime.UtcNow,
+                CreatedAt        = DateTime.UtcNow,
+            });
+        }
+
+        return explanation;
+    }
+
+    // ── Tier 2 helper ─────────────────────────────────────────────────────────
+
+    private static AiExplanationCache? FindBestStringMatch(
+        string normalized, IEnumerable<AiExplanationCache> candidates)
+    {
+        AiExplanationCache? bestMatch = null;
+        var bestScore = StringSimilarityThreshold - 0.001f; // must beat threshold
+
+        foreach (var c in candidates)
+        {
+            var score = TokenJaccard(normalized, c.NormalizedMessage);
+            if (score > bestScore)
+            {
+                bestScore = score;
+                bestMatch = c;
+            }
+        }
+
+        return bestMatch;
+    }
+
+    /// <summary>
+    /// Token-Jaccard similarity: split both strings into word tokens, compute
+    /// |intersection| / |union|. Fast (O(n+m)) and reliable for log messages
+    /// where our normalizer has already replaced dynamic values with placeholders.
+    /// </summary>
+    private static float TokenJaccard(string a, string b)
+    {
+        var setA = new HashSet<string>(
+            a.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        var setB = new HashSet<string>(
+            b.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+
+        var intersection = setA.Count(setB.Contains);
+        var union = setA.Count + setB.Count - intersection;
+
+        return union == 0 ? 0f : (float)intersection / union;
+    }
+
+    // ── Sentinel detection ────────────────────────────────────────────────────
+
+    private static bool IsOllamaStub(string explanation) =>
+        explanation.StartsWith("[Ollama offline]", StringComparison.OrdinalIgnoreCase) ||
+        explanation.StartsWith("[Error]", StringComparison.OrdinalIgnoreCase) ||
+        explanation.Equals("(no response from Ollama)", StringComparison.OrdinalIgnoreCase);
+}

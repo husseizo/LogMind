@@ -1,4 +1,5 @@
 using LogMind.Core.Interfaces;
+using LogMind.Infrastructure.Services;
 using Microsoft.AspNetCore.Mvc;
 
 namespace LogMind.API.Controllers;
@@ -9,11 +10,13 @@ public class LogsController : ControllerBase
 {
     private readonly ILogRepository _logs;
     private readonly IAiExplanationService _ai;
+    private readonly ExplanationCacheService _explanationCache;
 
-    public LogsController(ILogRepository logs, IAiExplanationService ai)
+    public LogsController(ILogRepository logs, IAiExplanationService ai, ExplanationCacheService explanationCache)
     {
         _logs = logs;
         _ai = ai;
+        _explanationCache = explanationCache;
     }
 
     [HttpGet]
@@ -57,7 +60,7 @@ public class LogsController : ControllerBase
     {
         var entry = await _logs.GetByIdAsync(id);
         if (entry is null) return NotFound();
-        var explanation = await _ai.ExplainErrorAsync(entry);
+        var explanation = await _explanationCache.GetOrExplainAsync(entry);
         return Ok(new { explanation });
     }
 

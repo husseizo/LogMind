@@ -10,9 +10,11 @@ public class LogMindDbContext : DbContext
     public DbSet<LogEntry> LogEntries => Set<LogEntry>();
     public DbSet<KnownIssue> KnownIssues => Set<KnownIssue>();
     public DbSet<Solution> Solutions => Set<Solution>();
+    public DbSet<SolutionFeedback> SolutionFeedback => Set<SolutionFeedback>();
     public DbSet<ErrorPattern> ErrorPatterns => Set<ErrorPattern>();
     public DbSet<Alert> Alerts => Set<Alert>();
     public DbSet<KnownIssueEmbedding> KnownIssueEmbeddings => Set<KnownIssueEmbedding>();
+    public DbSet<AiExplanationCache> AiExplanationCache => Set<AiExplanationCache>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -21,6 +23,9 @@ public class LogMindDbContext : DbContext
             e.HasIndex(x => x.Timestamp);
             e.HasIndex(x => x.Source);
             e.HasIndex(x => x.Level);
+            // Composite index for cursor-based pagination (DESC order mirrored in query)
+            e.HasIndex(x => new { x.Timestamp, x.Id }).HasDatabaseName("ix_logs_timestamp_id");
+            e.HasIndex(x => new { x.Source, x.Level }).HasDatabaseName("ix_logs_source_level");
         });
 
         modelBuilder.Entity<KnownIssue>()
@@ -47,6 +52,42 @@ public class LogMindDbContext : DbContext
             .WithMany()
             .HasForeignKey(e => e.KnownIssueId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<AiExplanationCache>(e =>
+        {
+            // Tier 1: exact hash lookup — must be unique per source+message combination
+            e.HasIndex(x => x.MessageHash).IsUnique().HasDatabaseName("ix_cache_hash");
+            // Tier 2: candidate fetch for string-similarity within same source
+            e.HasIndex(x => new { x.Source, x.CreatedAt }).HasDatabaseName("ix_cache_source_createdat");
+            // Cleanup job: find cold, non-invalidated entries by last use date
+            e.HasIndex(x => new { x.IsInvalidated, x.LastUsedAt }).HasDatabaseName("ix_cache_invalidated_lastused");
+
+            e.HasOne(x => x.LogEntry)
+             .WithMany()
+             .HasForeignKey(x => x.LogEntryId)
+             .OnDelete(DeleteBehavior.SetNull);
+
+            e.HasOne(x => x.RelatedIssue)
+             .WithMany()
+             .HasForeignKey(x => x.RelatedIssueId)
+             .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<SolutionFeedback>(e =>
+        {
+            e.HasIndex(x => x.SolutionId).HasDatabaseName("ix_feedback_solutionid");
+            e.HasIndex(x => x.LogEntryId).HasDatabaseName("ix_feedback_logentryid");
+
+            e.HasOne(x => x.Solution)
+             .WithMany(s => s.Feedback)
+             .HasForeignKey(x => x.SolutionId)
+             .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasOne(x => x.LogEntry)
+             .WithMany()
+             .HasForeignKey(x => x.LogEntryId)
+             .OnDelete(DeleteBehavior.SetNull);
+        });
 
         SeedData(modelBuilder);
     }

@@ -12,6 +12,7 @@ builder.Services.AddDbContext<LogMindDbContext>(opt =>
 // Repositories
 builder.Services.AddScoped<ILogRepository, LogRepository>();
 builder.Services.AddScoped<IAlertRepository, AlertRepository>();
+builder.Services.AddScoped<IExplanationCacheRepository, ExplanationCacheRepository>();
 
 // Search
 builder.Services.AddScoped<KeywordSearchService>();
@@ -38,6 +39,10 @@ builder.Services.AddHttpClient<OllamaEmbeddingService>(client =>
     client.Timeout = TimeSpan.FromSeconds(30);
 });
 builder.Services.AddScoped<IEmbeddingService>(sp => sp.GetRequiredService<OllamaEmbeddingService>());
+
+// Explanation cache orchestrator — wraps IAiExplanationService with the 3-tier cache cascade
+builder.Services.AddScoped<ExplanationCacheService>();
+builder.Services.AddScoped<SolutionFeedbackService>();
 
 // Notifications — both registered; each checks its own Enabled flag before sending
 builder.Services.AddScoped<INotificationService, EmailNotificationService>();
