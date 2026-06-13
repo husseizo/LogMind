@@ -16,6 +16,7 @@ builder.Services.AddScoped<IAlertRepository, AlertRepository>();
 builder.Services.AddScoped<IExplanationCacheRepository, ExplanationCacheRepository>();
 builder.Services.AddScoped<IOperationalKnowledgeRepository, OperationalKnowledgeRepository>();
 builder.Services.AddScoped<IOperationalDependencyRepository, OperationalDependencyRepository>();
+builder.Services.AddScoped<IIncidentRepository, IncidentRepository>();
 
 // Search
 builder.Services.AddScoped<KeywordSearchService>();
@@ -56,6 +57,7 @@ builder.Services.AddScoped<INotificationService, TeamsNotificationService>();
 builder.Services.AddHostedService<LogParserService>();
 builder.Services.AddHostedService<AlertDetectionService>();
 builder.Services.AddHostedService<EmbeddingIndexService>();
+builder.Services.AddHostedService<IncidentCorrelationService>();
 
 builder.Services.AddControllers()
     .AddJsonOptions(o =>

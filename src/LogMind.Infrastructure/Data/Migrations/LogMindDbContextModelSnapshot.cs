@@ -428,6 +428,118 @@ namespace LogMind.Infrastructure.Data.Migrations
                     b.ToTable("OperationalKnowledge");
                 });
 
+            modelBuilder.Entity("LogMind.Core.Models.Incident", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("EventCount")
+                        .HasDefaultValue(1)
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("FirstSeenAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("IncidentFingerprint")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("LastSeenAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ResolvedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RootCauseSummary")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RootLogMessage")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Severity")
+                        .IsRequired()
+                        .HasDefaultValue("High")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SourceSystem")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasDefaultValue("Open")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IncidentFingerprint")
+                        .HasDatabaseName("ix_incident_fingerprint");
+
+                    b.HasIndex("Status")
+                        .HasDatabaseName("ix_incident_status");
+
+                    b.HasIndex("SourceSystem", "LastSeenAt")
+                        .HasDatabaseName("ix_incident_source_lastseen");
+
+                    b.ToTable("Incidents");
+                });
+
+            modelBuilder.Entity("LogMind.Core.Models.IncidentEvent", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CorrelationBasis")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<float>("CorrelationScore")
+                        .HasDefaultValue(0f)
+                        .HasColumnType("REAL");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("IncidentId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("LogEntryId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("MinutesFromRoot")
+                        .HasDefaultValue(0)
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Sequence")
+                        .HasDefaultValue(0)
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LogEntryId")
+                        .HasDatabaseName("ix_incident_event_logentry");
+
+                    b.HasIndex("IncidentId", "Sequence")
+                        .HasDatabaseName("ix_incident_event_sequence");
+
+                    b.ToTable("IncidentEvents");
+                });
+
             modelBuilder.Entity("LogMind.Core.Models.Solution", b =>
                 {
                     b.Property<int>("Id")
@@ -596,6 +708,30 @@ namespace LogMind.Infrastructure.Data.Migrations
                     b.Navigation("LogEntry");
 
                     b.Navigation("Solution");
+                });
+
+            modelBuilder.Entity("LogMind.Core.Models.Incident", b =>
+                {
+                    b.Navigation("Events");
+                });
+
+            modelBuilder.Entity("LogMind.Core.Models.IncidentEvent", b =>
+                {
+                    b.HasOne("LogMind.Core.Models.Incident", "Incident")
+                        .WithMany("Events")
+                        .HasForeignKey("IncidentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("LogMind.Core.Models.LogEntry", "LogEntry")
+                        .WithMany()
+                        .HasForeignKey("LogEntryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Incident");
+
+                    b.Navigation("LogEntry");
                 });
 
             modelBuilder.Entity("LogMind.Core.Models.KnownIssue", b =>

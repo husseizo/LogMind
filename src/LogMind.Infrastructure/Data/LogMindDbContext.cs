@@ -17,6 +17,8 @@ public class LogMindDbContext : DbContext
     public DbSet<AiExplanationCache> AiExplanationCache => Set<AiExplanationCache>();
     public DbSet<OperationalKnowledge> OperationalKnowledge => Set<OperationalKnowledge>();
     public DbSet<OperationalDependency> OperationalDependencies => Set<OperationalDependency>();
+    public DbSet<Incident> Incidents => Set<Incident>();
+    public DbSet<IncidentEvent> IncidentEvents => Set<IncidentEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -101,6 +103,27 @@ public class LogMindDbContext : DbContext
         {
             e.HasIndex(x => x.SourceSystem).HasDatabaseName("ix_opdep_source");
             e.HasIndex(x => x.IsActive).HasDatabaseName("ix_opdep_active");
+        });
+
+        modelBuilder.Entity<Incident>(e =>
+        {
+            e.HasIndex(x => new { x.SourceSystem, x.LastSeenAt }).HasDatabaseName("ix_incident_source_lastseen");
+            e.HasIndex(x => x.Status).HasDatabaseName("ix_incident_status");
+            e.HasIndex(x => x.IncidentFingerprint).HasDatabaseName("ix_incident_fingerprint");
+            e.HasMany(x => x.Events)
+             .WithOne(x => x.Incident)
+             .HasForeignKey(x => x.IncidentId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<IncidentEvent>(e =>
+        {
+            e.HasIndex(x => x.LogEntryId).HasDatabaseName("ix_incident_event_logentry");
+            e.HasIndex(x => new { x.IncidentId, x.Sequence }).HasDatabaseName("ix_incident_event_sequence");
+            e.HasOne(x => x.LogEntry)
+             .WithMany()
+             .HasForeignKey(x => x.LogEntryId)
+             .OnDelete(DeleteBehavior.Cascade);
         });
 
         SeedData(modelBuilder);
