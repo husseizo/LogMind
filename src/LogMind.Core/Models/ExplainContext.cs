@@ -8,8 +8,9 @@ public record ExplainContext(
     IReadOnlyList<KnownIssue> SimilarIssues,
     IReadOnlyList<LogEntry> SimilarLogs,
     IReadOnlyList<AiExplanationCache> PreviousExplanations,
-    IReadOnlyList<OperationalKnowledge> OperationalKnowledge
+    IReadOnlyList<OperationalKnowledge> OperationalKnowledge,
+    IReadOnlyList<OperationalDependency> DownstreamDependencies
 )
 {
-    public static readonly ExplainContext Empty = new([], [], [], []);
+    public static readonly ExplainContext Empty = new([], [], [], [], []);
 }

@@ -31,7 +31,7 @@ public class OllamaAiExplanationService : IAiExplanationService
     public Task<string> ExplainErrorAsync(LogEntry logEntry, ExplainContext? context = null)
     {
         var ctx = context ?? ExplainContext.Empty;
-        var retrievedBlock = BuildRetrievedContextBlock(ctx);
+        var retrievedBlock = BuildRetrievedContextBlock(ctx, logEntry.Source);
 
         var prompt = $"""
             You are LogMind AI — a senior software architect, operations engineer, systems analyst, and troubleshooting specialist embedded inside the LogMind platform.
@@ -101,13 +101,14 @@ public class OllamaAiExplanationService : IAiExplanationService
         return worked * 10 + s.Upvotes * 3 - failed * 5;
     }
 
-    private static string BuildRetrievedContextBlock(ExplainContext ctx)
+    private static string BuildRetrievedContextBlock(ExplainContext ctx, string logSource)
     {
         var sb = new System.Text.StringBuilder();
 
         var hasContent = ctx.SimilarIssues.Count > 0
                       || ctx.SimilarLogs.Count > 0
-                      || ctx.PreviousExplanations.Count > 0;
+                      || ctx.PreviousExplanations.Count > 0
+                      || ctx.DownstreamDependencies.Count > 0;
 
         if (!hasContent)
         {
@@ -193,6 +194,27 @@ public class OllamaAiExplanationService : IAiExplanationService
                 sb.AppendLine(doc.Content);
                 sb.AppendLine();
             }
+        }
+
+        if (ctx.DownstreamDependencies.Count > 0)
+        {
+            var totalScore = ctx.DownstreamDependencies.Sum(d => d.ImpactWeight);
+            var severity   = totalScore >= 200 ? "Critical" : totalScore >= 100 ? "High" : totalScore >= 50 ? "Medium" : "Low";
+
+            sb.AppendLine("DEPENDENCY IMPACT (Downstream Systems at Risk):");
+            sb.AppendLine($"  This failure occurred in: {logSource}");
+            sb.AppendLine($"  Incident Severity Score: {totalScore} → {severity}");
+            sb.AppendLine();
+            sb.AppendLine("  Downstream systems that depend on this source:");
+            foreach (var dep in ctx.DownstreamDependencies)
+            {
+                sb.AppendLine($"    [{dep.Criticality,-8} | weight={dep.ImpactWeight,3}] {dep.TargetSystem} ({dep.DependencyType})");
+                sb.AppendLine($"      {dep.Description}");
+            }
+            sb.AppendLine();
+            sb.AppendLine("  Verify these systems for stale or missing data before closing this incident.");
+            sb.AppendLine("  High/Critical downstream systems must be checked even if they appear unaffected.");
+            sb.AppendLine();
         }
 
         return sb.ToString().TrimEnd();

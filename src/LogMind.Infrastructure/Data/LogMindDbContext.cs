@@ -16,6 +16,7 @@ public class LogMindDbContext : DbContext
     public DbSet<KnownIssueEmbedding> KnownIssueEmbeddings => Set<KnownIssueEmbedding>();
     public DbSet<AiExplanationCache> AiExplanationCache => Set<AiExplanationCache>();
     public DbSet<OperationalKnowledge> OperationalKnowledge => Set<OperationalKnowledge>();
+    public DbSet<OperationalDependency> OperationalDependencies => Set<OperationalDependency>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -94,6 +95,12 @@ public class LogMindDbContext : DbContext
         {
             e.HasIndex(x => x.IsActive).HasDatabaseName("ix_opknowledge_active");
             e.HasIndex(x => x.Category).HasDatabaseName("ix_opknowledge_category");
+        });
+
+        modelBuilder.Entity<OperationalDependency>(e =>
+        {
+            e.HasIndex(x => x.SourceSystem).HasDatabaseName("ix_opdep_source");
+            e.HasIndex(x => x.IsActive).HasDatabaseName("ix_opdep_active");
         });
 
         SeedData(modelBuilder);

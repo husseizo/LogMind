@@ -15,6 +15,7 @@ builder.Services.AddScoped<ILogRepository, LogRepository>();
 builder.Services.AddScoped<IAlertRepository, AlertRepository>();
 builder.Services.AddScoped<IExplanationCacheRepository, ExplanationCacheRepository>();
 builder.Services.AddScoped<IOperationalKnowledgeRepository, OperationalKnowledgeRepository>();
+builder.Services.AddScoped<IOperationalDependencyRepository, OperationalDependencyRepository>();
 
 // Search
 builder.Services.AddScoped<KeywordSearchService>();
@@ -74,6 +75,7 @@ using (var scope = app.Services.CreateScope())
     var db = scope.ServiceProvider.GetRequiredService<LogMindDbContext>();
     db.Database.Migrate();
     await OperationalKnowledgeSeeder.SeedAsync(db);
+    await OperationalDependencySeeder.SeedAsync(db);
 }
 
 if (app.Environment.IsDevelopment())

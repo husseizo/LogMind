@@ -27,6 +27,7 @@ public class ExplanationCacheService
     private readonly IEmbeddingService _embeddings;
     private readonly ISearchService _search;
     private readonly IOperationalKnowledgeRepository _opKnowledge;
+    private readonly IOperationalDependencyRepository _deps;
     private readonly OllamaSettings _settings;
     private readonly ILogger<ExplanationCacheService> _logger;
 
@@ -36,6 +37,7 @@ public class ExplanationCacheService
         IEmbeddingService embeddings,
         ISearchService search,
         IOperationalKnowledgeRepository opKnowledge,
+        IOperationalDependencyRepository deps,
         OllamaSettings settings,
         ILogger<ExplanationCacheService> logger)
     {
@@ -44,6 +46,7 @@ public class ExplanationCacheService
         _embeddings  = embeddings;
         _search      = search;
         _opKnowledge = opKnowledge;
+        _deps        = deps;
         _settings    = settings;
         _logger      = logger;
     }
@@ -178,9 +181,10 @@ public class ExplanationCacheService
         {
             var issuesTask   = _search.FindSimilarIssuesAsync(entry.Message, topK: 3);
             var logsTask     = _search.SearchLogsAsync(entry.Message, entry.Source);
-            var opKnowTask   = _opKnowledge.FindRelevantAsync(entry.Source, queryVector, topK: 2);
+            var opKnowTask   = _opKnowledge.FindRelevantAsync(entry.Source, queryVector, topK: 3);
+            var depsTask     = _deps.FindDownstreamAsync(entry.Source);
 
-            await Task.WhenAll(issuesTask, logsTask, opKnowTask);
+            await Task.WhenAll(issuesTask, logsTask, opKnowTask, depsTask);
 
             var issues = (await issuesTask).ToList();
 
@@ -197,13 +201,15 @@ public class ExplanationCacheService
                 .ToList();
 
             var opKnowledge = await opKnowTask;
+            var downstream  = await depsTask;
 
-            return new ExplainContext(issues, similarLogs, prevExplanations, opKnowledge);
+            return new ExplainContext(issues, similarLogs, prevExplanations, opKnowledge, downstream);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "RAG context retrieval failed — proceeding with empty context");
             return ExplainContext.Empty;
+
         }
     }
 
