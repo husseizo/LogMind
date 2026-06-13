@@ -253,17 +253,17 @@ namespace LogMind.Infrastructure.Data.Migrations
                     b.Navigation("KnownIssue");
                 });
 
-            modelBuilder.Entity("LogMind.Core.Models.Incident", b =>
-                {
-                    b.Navigation("Events");
-                });
-
             modelBuilder.Entity("LogMind.Core.Models.IncidentEvent", b =>
                 {
                     b.HasOne("LogMind.Core.Models.Incident", "Incident").WithMany("Events").HasForeignKey("IncidentId").OnDelete(DeleteBehavior.Cascade).IsRequired();
                     b.HasOne("LogMind.Core.Models.LogEntry", "LogEntry").WithMany().HasForeignKey("LogEntryId").OnDelete(DeleteBehavior.Cascade).IsRequired();
                     b.Navigation("Incident");
                     b.Navigation("LogEntry");
+                });
+
+            modelBuilder.Entity("LogMind.Core.Models.Incident", b =>
+                {
+                    b.Navigation("Events");
                 });
 
             modelBuilder.Entity("LogMind.Core.Models.KnownIssueEmbedding", b =>

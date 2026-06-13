@@ -710,11 +710,6 @@ namespace LogMind.Infrastructure.Data.Migrations
                     b.Navigation("Solution");
                 });
 
-            modelBuilder.Entity("LogMind.Core.Models.Incident", b =>
-                {
-                    b.Navigation("Events");
-                });
-
             modelBuilder.Entity("LogMind.Core.Models.IncidentEvent", b =>
                 {
                     b.HasOne("LogMind.Core.Models.Incident", "Incident")
@@ -732,6 +727,11 @@ namespace LogMind.Infrastructure.Data.Migrations
                     b.Navigation("Incident");
 
                     b.Navigation("LogEntry");
+                });
+
+            modelBuilder.Entity("LogMind.Core.Models.Incident", b =>
+                {
+                    b.Navigation("Events");
                 });
 
             modelBuilder.Entity("LogMind.Core.Models.KnownIssue", b =>
