@@ -178,6 +178,23 @@ public class OllamaAiExplanationService : IAiExplanationService
             }
         }
 
+        if (ctx.OperationalKnowledge.Count > 0)
+        {
+            sb.AppendLine("OPERATIONAL KNOWLEDGE (business process and integration architecture context):");
+            sb.AppendLine("Use this to understand business impact, workflow dependencies, and cross-system effects.");
+            sb.AppendLine();
+            foreach (var doc in ctx.OperationalKnowledge)
+            {
+                sb.AppendLine($"  [{doc.Category}] {doc.Title}");
+                sb.AppendLine($"  System: {doc.System}");
+                sb.AppendLine($"  Tags: {doc.Tags}");
+                sb.AppendLine($"  Scope: Applies to log sources: {string.Join(", ", System.Text.Json.JsonSerializer.Deserialize<List<string>>(doc.ApplicableSources) ?? [])}");
+                sb.AppendLine();
+                sb.AppendLine(doc.Content);
+                sb.AppendLine();
+            }
+        }
+
         return sb.ToString().TrimEnd();
     }
 

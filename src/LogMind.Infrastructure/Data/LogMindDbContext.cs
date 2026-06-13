@@ -15,6 +15,7 @@ public class LogMindDbContext : DbContext
     public DbSet<Alert> Alerts => Set<Alert>();
     public DbSet<KnownIssueEmbedding> KnownIssueEmbeddings => Set<KnownIssueEmbedding>();
     public DbSet<AiExplanationCache> AiExplanationCache => Set<AiExplanationCache>();
+    public DbSet<OperationalKnowledge> OperationalKnowledge => Set<OperationalKnowledge>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -87,6 +88,12 @@ public class LogMindDbContext : DbContext
              .WithMany()
              .HasForeignKey(x => x.LogEntryId)
              .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<OperationalKnowledge>(e =>
+        {
+            e.HasIndex(x => x.IsActive).HasDatabaseName("ix_opknowledge_active");
+            e.HasIndex(x => x.Category).HasDatabaseName("ix_opknowledge_category");
         });
 
         SeedData(modelBuilder);

@@ -26,6 +26,7 @@ public class ExplanationCacheService
     private readonly IAiExplanationService _ollama;
     private readonly IEmbeddingService _embeddings;
     private readonly ISearchService _search;
+    private readonly IOperationalKnowledgeRepository _opKnowledge;
     private readonly OllamaSettings _settings;
     private readonly ILogger<ExplanationCacheService> _logger;
 
@@ -34,15 +35,17 @@ public class ExplanationCacheService
         IAiExplanationService ollama,
         IEmbeddingService embeddings,
         ISearchService search,
+        IOperationalKnowledgeRepository opKnowledge,
         OllamaSettings settings,
         ILogger<ExplanationCacheService> logger)
     {
-        _cache      = cache;
-        _ollama     = ollama;
-        _embeddings = embeddings;
-        _search     = search;
-        _settings   = settings;
-        _logger     = logger;
+        _cache       = cache;
+        _ollama      = ollama;
+        _embeddings  = embeddings;
+        _search      = search;
+        _opKnowledge = opKnowledge;
+        _settings    = settings;
+        _logger      = logger;
     }
 
     /// <summary>
@@ -125,9 +128,9 @@ public class ExplanationCacheService
 
         // ── Full miss: retrieve RAG context then call Ollama ─────────────────
         _logger.LogDebug("Cache miss — building RAG context for {Source}/{Level}", entry.Source, entry.Level);
-        var context = await BuildExplainContextAsync(entry, candidates);
-        _logger.LogDebug("RAG context: {Issues} known issues, {Logs} similar logs, {Prev} previous explanations",
-            context.SimilarIssues.Count, context.SimilarLogs.Count, context.PreviousExplanations.Count);
+        var context = await BuildExplainContextAsync(entry, candidates, queryVector);
+        _logger.LogDebug("RAG context: {Issues} known issues, {Logs} similar logs, {Prev} prev explanations, {Ok} op-knowledge docs",
+            context.SimilarIssues.Count, context.SimilarLogs.Count, context.PreviousExplanations.Count, context.OperationalKnowledge.Count);
         var explanation = await _ollama.ExplainErrorAsync(entry, context);
 
         if (!IsOllamaStub(explanation))
@@ -168,14 +171,16 @@ public class ExplanationCacheService
 
     private async Task<ExplainContext> BuildExplainContextAsync(
         LogEntry entry,
-        IEnumerable<AiExplanationCache> tier2Candidates)
+        IEnumerable<AiExplanationCache> tier2Candidates,
+        float[]? queryVector = null)
     {
         try
         {
-            var issuesTask = _search.FindSimilarIssuesAsync(entry.Message, topK: 3);
-            var logsTask   = _search.SearchLogsAsync(entry.Message, entry.Source);
+            var issuesTask   = _search.FindSimilarIssuesAsync(entry.Message, topK: 3);
+            var logsTask     = _search.SearchLogsAsync(entry.Message, entry.Source);
+            var opKnowTask   = _opKnowledge.FindRelevantAsync(entry.Source, queryVector, topK: 2);
 
-            await Task.WhenAll(issuesTask, logsTask);
+            await Task.WhenAll(issuesTask, logsTask, opKnowTask);
 
             var issues = (await issuesTask).ToList();
 
@@ -184,16 +189,16 @@ public class ExplanationCacheService
                 .Take(3)
                 .ToList();
 
-            // Reuse the Tier-2 candidates already in memory — no extra DB call.
-            // These are non-invalidated previous explanations for the same source,
-            // ordered by most recently used, giving the AI prior reasoning context.
+            // Reuse Tier-2 candidates already in memory — no extra DB call.
             var prevExplanations = tier2Candidates
                 .Where(c => !c.IsInvalidated)
                 .OrderByDescending(c => c.LastUsedAt)
                 .Take(3)
                 .ToList();
 
-            return new ExplainContext(issues, similarLogs, prevExplanations);
+            var opKnowledge = await opKnowTask;
+
+            return new ExplainContext(issues, similarLogs, prevExplanations, opKnowledge);
         }
         catch (Exception ex)
         {

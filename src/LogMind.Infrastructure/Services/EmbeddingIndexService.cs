@@ -1,3 +1,4 @@
+using LogMind.Core.Interfaces;
 using LogMind.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -36,25 +37,56 @@ public class EmbeddingIndexService : BackgroundService
     private async Task IndexMissingAsync()
     {
         using var scope = _scopeFactory.CreateScope();
-        var db      = scope.ServiceProvider.GetRequiredService<LogMindDbContext>();
-        var search  = scope.ServiceProvider.GetRequiredService<EmbeddingSearchService>();
+        var db        = scope.ServiceProvider.GetRequiredService<LogMindDbContext>();
+        var search    = scope.ServiceProvider.GetRequiredService<EmbeddingSearchService>();
+        var embedding = scope.ServiceProvider.GetRequiredService<IEmbeddingService>();
+        var opRepo    = scope.ServiceProvider.GetRequiredService<IOperationalKnowledgeRepository>();
 
+        // ── KnownIssues ──────────────────────────────────────────────────────
         var indexedIds = new HashSet<int>(await db.KnownIssueEmbeddings
             .Select(e => e.KnownIssueId)
             .ToListAsync());
 
-        var unindexed = await db.KnownIssues
+        var unindexedIssues = await db.KnownIssues
             .Where(k => !indexedIds.Contains(k.Id))
             .ToListAsync();
 
-        if (unindexed.Count == 0) return;
-
-        _logger.LogInformation("Embedding {Count} new KnownIssues...", unindexed.Count);
-        foreach (var issue in unindexed)
+        if (unindexedIssues.Count > 0)
         {
-            try { await search.IndexKnownIssueAsync(issue); }
-            catch (Exception ex) { _logger.LogWarning(ex, "Failed to embed issue {Id}: {Title}", issue.Id, issue.Title); }
+            _logger.LogInformation("Embedding {Count} new KnownIssues...", unindexedIssues.Count);
+            foreach (var issue in unindexedIssues)
+            {
+                try { await search.IndexKnownIssueAsync(issue); }
+                catch (Exception ex) { _logger.LogWarning(ex, "Failed to embed issue {Id}: {Title}", issue.Id, issue.Title); }
+            }
+            _logger.LogInformation("KnownIssue embedding complete.");
         }
-        _logger.LogInformation("Embedding complete.");
+
+        // ── OperationalKnowledge ──────────────────────────────────────────────
+        if (!embedding.IsAvailable) return;
+
+        var allDocs = await opRepo.GetAllAsync();
+        var unindexedDocs = allDocs.Where(d => d.IsActive && d.EmbeddingVector is null).ToList();
+
+        if (unindexedDocs.Count > 0)
+        {
+            _logger.LogInformation("Embedding {Count} OperationalKnowledge document(s)...", unindexedDocs.Count);
+            foreach (var doc in unindexedDocs)
+            {
+                try
+                {
+                    // Embed: title + category + tags + first 600 chars of content
+                    var text = $"{doc.Title}. {doc.Category}. Tags: {doc.Tags}. {doc.Content[..Math.Min(600, doc.Content.Length)]}";
+                    var vector = await embedding.GetEmbeddingAsync(text);
+                    if (vector.Length > 0)
+                        await opRepo.UpdateEmbeddingAsync(doc.Id, vector);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to embed OperationalKnowledge {Id}: {Title}", doc.Id, doc.Title);
+                }
+            }
+            _logger.LogInformation("OperationalKnowledge embedding complete.");
+        }
     }
 }

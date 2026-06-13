@@ -7,8 +7,9 @@ namespace LogMind.Core.Models;
 public record ExplainContext(
     IReadOnlyList<KnownIssue> SimilarIssues,
     IReadOnlyList<LogEntry> SimilarLogs,
-    IReadOnlyList<AiExplanationCache> PreviousExplanations
+    IReadOnlyList<AiExplanationCache> PreviousExplanations,
+    IReadOnlyList<OperationalKnowledge> OperationalKnowledge
 )
 {
-    public static readonly ExplainContext Empty = new([], [], []);
+    public static readonly ExplainContext Empty = new([], [], [], []);
 }
